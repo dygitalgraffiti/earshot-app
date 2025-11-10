@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <title>Post a vibe</title>
+</head>
+<body class="bg-gray-100 text-gray-900 min-h-screen flex items-center justify-center p-4">
+  <div class="bg-white p-6 rounded-2xl shadow-xl w-full max-w-md">
+    <a href="/" class="text-gray-500 text-sm mb-4 inline-block">&larr; back</a>
+    <h1 class="text-2xl font-bold mb-4">Share a song</h1>
+    
+    <form method="post">
+      <input name="url" placeholder="Paste Spotify, YouTube Music, or Apple Music link..." required
+             class="w-full p-3 rounded-lg border mb-4">
+      <button class="w-full bg-green-600 text-white p-3 rounded-lg font-bold">
+        Post
+      </button>
+    </form>
+
+    <p class="text-xs text-gray-500 mt-4 text-center">
+      Examples:<br>
+      Spotify: open.spotify.com/track/...<br>
+      YouTube Music: music.youtube.com/watch?v=...<br>
+      Apple Music: music.apple.com/us/song/...
+    </p>
+  </div>
+</body>
+</html>
