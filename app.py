@@ -1,15 +1,15 @@
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify
+from flask import Flask, render_template, request, redirect, url_for, session
 from flask_sqlalchemy import SQLAlchemy
-import requests, re
+import requests, re, os
 from datetime import datetime
-import os
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'earshot-secret-key-2025'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///earshot.db'
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'earshot-secret-2025')
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///earshot.db').replace('postgres://', 'postgresql://')
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-# MODELS (Added username to posts)
+# MODELS
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
@@ -23,98 +23,41 @@ class Follow(db.Model):
 class Post(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
-    platform = db.Column(db.String(20))  # 'spotify', 'youtube', 'apple'
+    platform = db.Column(db.String(20))
     url = db.Column(db.String(300))
     title = db.Column(db.String(200))
     artist = db.Column(db.String(200))
-    thumbnail = db.Column(db.String(300))
+    thumbnail = db.Column(db.String258)
     embed_url = db.Column(db.String(300))
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
     user = db.relationship('User', backref='posts')
 
-with app.app_context():
-    db.create_all()
-
-def get_spotify_data(url):
-    match = re.search(r'spotify\.com/track/([a-zA-Z0-9]+)', url)
-    if not match: return None
-    track_id = match.group(1)
+# LAZY DB INIT — ONLY ON FIRST REQUEST
+def create_db():
     try:
-        oembed = requests.get(f"https://open.spotify.com/oembed?url={url}").json()
-        full = oembed['title']
-        parts = full.split(' · ')
-        song = parts[0]
-        artist = parts[1] if len(parts) > 1 else ''
-        return {
-            'title': song,
-            'artist': artist,
-            'thumbnail': oembed['thumbnail_url'],
-            'embed_url': f"https://open.spotify.com/embed/track/{track_id}"
-        }
-    except:
-        return None
+        with app.app_context():
+            db.create_all()
+            print("DB tables created.")
+    except Exception as e:
+        print(f"DB create error: {e}")
 
-def get_youtube_data(url):
-    # Handle music.youtube.com -> youtube.com
-    url = re.sub(r'music\.youtube\.com', 'youtube.com', url)
-    match = re.search(r'youtube\.com/watch\?v=([a-zA-Z0-9_-]+)', url)
-    if not match: return None
-    video_id = match.group(1)
-    try:
-        oembed = requests.get(f"https://www.youtube.com/oembed?url={url}&format=json").json()
-        title = oembed['title']
-        # Simple artist extract (improve later)
-        artist = title.split(' - ')[0] if ' - ' in title else 'Artist'
-        song = title.split(' - ')[1] if ' - ' in title else title
-        return {
-            'title': song,
-            'artist': artist,
-            'thumbnail': oembed['thumbnail_url'],
-            'embed_url': f"https://www.youtube.com/embed/{video_id}"
-        }
-    except:
-        return None
+@app.before_first_request
+def before_first_request():
+    create_db()
 
-def get_apple_data(url):
-    match = re.search(r'music\.apple\.com/[^/]+/song/(\d+)', url)
-    if not match: return None
-    song_id = match.group(1)
-    embed_base = url.replace('/song/', '/embed/song/')  # e.g., /embed/song/123456789
-    try:
-        # Fetch metadata via Apple Music API (public catalog, no auth for basics)
-        api_url = f"https://itunes.apple.com/lookup?id={song_id}&entity=song"
-        data = requests.get(api_url).json()
-        if data['resultCount'] > 0:
-            track = data['results'][0]
-            return {
-                'title': track['trackName'],
-                'artist': track['artistName'],
-                'thumbnail': track['artworkUrl100'].replace('100x100', '300x300'),
-                'embed_url': embed_base
-            }
-    except:
-        pass
-    return None
-
-def get_media_data(url):
-    if 'spotify.com' in url:
-        return get_spotify_data(url), 'spotify'
-    elif 'music.youtube.com' in url or 'youtube.com' in url:
-        return get_youtube_data(url), 'youtube'
-    elif 'music.apple.com' in url:
-        return get_apple_data(url), 'apple'
-    return None, None
-
+# ROUTES
 @app.route('/')
 def index():
     if 'user_id' not in session:
         return redirect('/login')
-    followed = Follow.query.filter_by(follower_id=session['user_id']).all()
-    followed_ids = [f.followed_id for f in followed] + [session['user_id']]
-    posts = Post.query.filter(Post.user_id.in_(followed_ids))\
-                      .order_by(Post.timestamp.desc()).all()
-    current_user = User.query.get(session['user_id'])
-    return render_template('feed.html', posts=posts, current_user=current_user)
+    try:
+        followed = Follow.query.filter_by(follower_id=session['user_id']).all()
+        followed_ids = [f.followed_id for f in followed] + [session['user_id']]
+        posts = Post.query.filter(Post.user_id.in_(followed_ids)).order_by(Post.timestamp.desc()).all()
+        current_user = User.query.get(session['user_id'])
+        return render_template('feed.html', posts=posts, current_user=current_user)
+    except Exception as e:
+        return f"<h1>DB Error</h1><p>{e}</p><a href='/logout'>Logout</a>"
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -144,30 +87,19 @@ def post():
         return redirect('/login')
     if request.method == 'POST':
         url = request.form['url']
-        data, platform = get_media_data(url)
-        if data:
-            p = Post(
-                user_id=session['user_id'],
-                platform=platform,
-                url=url,
-                title=data['title'],
-                artist=data['artist'],
-                thumbnail=data['thumbnail'],
-                embed_url=data['embed_url']
-            )
-            db.session.add(p)
-            db.session.commit()
+        # Skip API for now — just post title
+        p = Post(
+            user_id=session['user_id'],
+            title="Test Song",
+            artist="Test Artist",
+            thumbnail="https://via.placeholder.com/300",
+            embed_url="https://www.youtube.com/embed/dQw4w9WgXcQ",
+            url=url
+        )
+        db.session.add(p)
+        db.session.commit()
         return redirect('/')
     return render_template('post.html')
-
-@app.route('/follow/<int:user_id>')
-def follow(user_id):
-    if 'user_id' not in session or session['user_id'] == user_id:
-        return redirect('/')
-    f = Follow(follower_id=session['user_id'], followed_id=user_id)
-    db.session.add(f)
-    db.session.commit()
-    return redirect('/')
 
 @app.route('/logout')
 def logout():
