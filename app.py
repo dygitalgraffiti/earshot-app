@@ -27,7 +27,7 @@ class Post(db.Model):
     url = db.Column(db.String(300))
     title = db.Column(db.String(200))
     artist = db.Column(db.String(200))
-    thumbnail = db.Column(db.String258)
+    thumbnail = db.Column(db.String(258))
     embed_url = db.Column(db.String(300))
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
     user = db.relationship('User', backref='posts')
@@ -109,3 +109,4 @@ def logout():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
+
