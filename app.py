@@ -81,101 +81,117 @@ def get_media_data(url):
 # ========================= ROUTES =========================
 @app.route('/')
 def index():
+    init_db()  # REQUIRED
     if 'user_id' not in session:
-        return redirect('/login')
-    followed = Follow.query.filter_by(follower_id=session['user_id']).all()
-    followed_ids = [f.followed_id for f in followed] + [session['user_id']]
-    posts = Post.query.filter(Post.user_id.in_(followed_ids))\
-                      .order_by(Post.timestamp.desc()).all()
-    current_user = User.query.get(session['user_id'])
-    return render_template('feed.html', posts=posts, current_user=current_user)
+        return render_template('index.html', posts=[], current_user=None)
+    
+    current_user = app.User.query.get(session['user_id'])
+    posts = app.Post.query.order_by(app.Post.timestamp.desc()).all()
+    
+    # Populate user for each post
+    for post in posts:
+        post.username = app.User.query.get(post.user_id).username
+    
+    return render_template('index.html', posts=posts, current_user=current_user)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    init_db()  # REQUIRED
     if request.method == 'POST':
-        user = User.query.filter_by(username=request.form['username']).first()
-        if user and user.password == request.form['password']:
+        username = request.form.get('username')
+        password = request.form.get('password')
+        if not username or not password:
+            flash('Both fields required.')
+            return redirect(url_for('login'))
+        user = app.User.query.filter_by(username=username, password=password).first()
+        if user:
             session['user_id'] = user.id
-            flash('Logged in successfully!')
-            return redirect('/')
-        flash('Invalid username or password.')
+            flash('Logged in!')
+            return redirect(url_for('index'))
+        flash('Invalid credentials.')
+        return redirect(url_for('login'))
     return render_template('login.html')
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
+    init_db()  # REQUIRED
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
-
         if not username or not password:
-            flash('Both fields are required.')
+            flash('Both fields required.')
             return redirect(url_for('register'))
-
-        if User.query.filter_by(username=username).first():
+        if app.User.query.filter_by(username=username).first():
             flash('Username already taken.')
             return redirect(url_for('register'))
-
-        user = User(username=username, password=password)
+        user = app.User(username=username, password=password)
         db.session.add(user)
         db.session.commit()
         session['user_id'] = user.id
         flash('Account created! Welcome to Earshot.')
-        return redirect('/')
-
+        return redirect(url_for('index'))
     return render_template('register.html')
 
 @app.route('/post', methods=['GET', 'POST'])
 def post():
+    init_db()  # REQUIRED
     if 'user_id' not in session:
-        return redirect('/login')
-
+        return redirect(url_for('login'))
+    
     if request.method == 'POST':
-        url = request.form.get('url', '').strip()
+        url = request.form.get('url')
         if not url:
-            flash('Please enter a music URL.')
+            flash('URL required.')
             return redirect(url_for('post'))
-
-        data, platform = get_media_data(url)
+        
+        # Parse platform and data
+        platform = None
+        data = None
+        if 'spotify.com' in url:
+            platform = 'spotify'
+            data = get_spotify_data(url)
+        elif 'youtube.com' in url or 'youtu.be' in url:
+            platform = 'youtube'
+            data = get_youtube_data(url)
+        elif 'music.apple.com' in url:
+            platform = 'apple'
+            data = get_apple_data(url)
+        
         if not data:
-            flash('Unsupported link. Try Spotify, YouTube, or Apple Music.')
+            flash('Unsupported or invalid URL.')
             return redirect(url_for('post'))
-
-        try:
-            p = Post(
-                user_id=session['user_id'],
-                platform=platform,
-                url=url,
-                title=data['title'],
-                artist=data['artist'],
-                thumbnail=data['thumbnail'],
-                embed_url=data['embed_url']
-            )
-            db.session.add(p)
-            db.session.commit()
-            flash('Track shared!')
-        except Exception as e:
-            db.session.rollback()
-            flash('Error saving post. Try again.')
-            app.logger.error(f"Post error: {e}")
-
-        return redirect('/')
-
+        
+        p = app.Post(
+            user_id=session['user_id'],
+            platform=platform,
+            url=url,
+            title=data['title'],
+            artist=data['artist'],
+            thumbnail=data['thumbnail'],
+            embed_url=data['embed_url']
+        )
+        db.session.add(p)
+        db.session.commit()
+        flash('Track shared!')
+        return redirect(url_for('index'))
+    
     return render_template('post.html')
 
 @app.route('/follow/<int:user_id>')
 def follow(user_id):
+    init_db()  # REQUIRED
     if 'user_id' not in session or session['user_id'] == user_id:
-        return redirect('/')
-    f = Follow(follower_id=session['user_id'], followed_id=user_id)
+        return redirect(url_for('index'))
+    f = app.Follow(follower_id=session['user_id'], followed_id=user_id)
     db.session.add(f)
     db.session.commit()
-    return redirect('/')
+    return redirect(url_for('index'))
 
 @app.route('/logout')
 def logout():
     session.pop('user_id', None)
     flash('Logged out.')
-    return redirect('/login')
+    return redirect(url_for('login'))
 
 # ========================= RUN APP =========================
 if __name__ == '__main__':
@@ -223,6 +239,7 @@ def before_request():
 with app.app_context():
     db_instance = init_db()
     db_instance.create_all()
+
 
 
 
