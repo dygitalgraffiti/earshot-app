@@ -1,1 +1,87 @@
 
+<!DOCTYPE html>
+<html>
+<head>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <title>earshot</title>
+</head>
+<body class="bg-gray-100 text-gray-900 min-h-screen py-4">
+
+<div class="max-w-md mx-auto bg-white rounded-2xl shadow-xl overflow-hidden">
+  <!-- Header -->
+  <div class="bg-gradient-to-r from-green-500 to-green-600 p-4 flex justify-between items-center">
+    <h1 class="text-xl font-bold text-white">earshot</h1>
+    <div>
+      <a href="/post" class="bg-white bg-opacity-20 px-3 py-1 rounded-full text-sm mr-2">+ Post</a>
+      <a href="/logout" class="text-white text-sm opacity-80">logout</a>
+    </div>
+  </div>
+
+  <!-- Chat-like Feed -->
+  <div class="p-4 space-y-4 max-h-screen overflow-y-auto">
+    {% for post in posts %}
+      {% set is_me = post.user_id == current_user.id if current_user else False %}
+      <div class="flex {% if is_me %}justify-end{% else %}justify-start{% endif %}">
+        <div class="max-w-xs lg:max-w-md px-4 py-2 rounded-2xl {% if is_me %}bg-green-500 text-white{% else %}bg-gray-200 shadow-sm{% endif %}">
+          <!-- Album Art + Info -->
+          <div class="flex items-start space-x-3">
+            <img src="{{ post.thumbnail }}" class="w-12 h-12 rounded-lg flex-shrink-0 object-cover">
+
+            <div class="flex-1 min-w-0">
+              <p class="font-medium truncate">{{ post.title }}</p>
+              <p class="text-sm opacity-80 truncate">{{ post.artist }}</p>
+            </div>
+
+            <button onclick="play(this)" data-embed="{{ post.embed_url }}"
+                    class="ml-2 w-8 h-8 rounded-full bg-white bg-opacity-20 flex items-center justify-center flex-shrink-0">
+              <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M8 5v14l11-7z"/>
+              </svg>
+            </button>
+          </div>
+
+          <!-- Inline Player -->
+          <div class="hidden mt-2 player-container w-full"></div>
+
+          <!-- Timestamp + Username -->
+          <p class="text-xs opacity-60 mt-2 text-right truncate">
+            {% if is_me %}You{% else %}@{{ post.user.username if post.user else 'Unknown' }}{% endif %} · {{ post.timestamp.strftime('%H:%M') }}
+          </p>
+        </div>
+      </div>
+    {% else %}
+      <p class="text-center text-gray-500 py-8">Your friends' vibes will appear here. Post first!</p>
+    {% endfor %}
+  </div>
+</div>
+
+<script>
+function play(btn) {
+  const container = btn.closest('.rounded-2xl').querySelector('.player-container');
+  const url = btn.getAttribute('data-embed');
+
+  if (container.classList.contains('hidden')) {
+    const iframe = document.createElement('iframe');
+    iframe.src = url;
+    iframe.className = 'w-full h-20 rounded-lg';
+    iframe.frameBorder = '0';
+    iframe.allow = 'encrypted-media; autoplay';
+    iframe.allowFullscreen = true;
+
+    if (url.includes('youtube.com') || url.includes('youtu.be')) {
+      const sep = url.includes('?') ? '&' : '?';
+      iframe.src += sep + 'enablejsapi=1&origin=' + encodeURIComponent(window.location.origin);
+    }
+
+    container.appendChild(iframe);
+    container.classList.remove('hidden');
+  } else {
+    container.innerHTML = '';
+    container.classList.add('hidden');
+  }
+}
+</script>
+
+</body>
+</html>
+
