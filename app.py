@@ -3,27 +3,18 @@ from flask_sqlalchemy import SQLAlchemy
 import requests, re, os
 from datetime import datetime
 
-# ========================================
-# APP SETUP
-# ========================================
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'earshot-secret-2025')
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///earshot.db').replace('postgres://', 'postgresql://')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-# ========================================
-# MODELS
-# ========================================
+# MODELS (SIMPLIFIED — NO Follow, no relationship)
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password = db.Column(db.String(120), nullable=False)
-
-class Follow(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    follower_id = db.Column(db.Integer, db.ForeignKey('user.id'))
-    followed_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    posts = db.relationship('Post', backref='user', lazy=True, cascade='all, delete-orphan')
 
 class Post(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -35,11 +26,8 @@ class Post(db.Model):
     thumbnail = db.Column(db.String(300))
     embed_url = db.Column(db.String(300))
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
-    user = db.relationship('User', backref='posts')
 
-# ========================================
-# DB INIT — FLASK 3.0+ COMPATIBLE
-# ========================================
+# DB INIT
 @app.before_request
 def init_db():
     if not hasattr(app, 'db_initialized'):
@@ -51,9 +39,7 @@ def init_db():
         except Exception as e:
             print(f"DB create error: {e}")
 
-# ========================================
-# HELPERS — MULTI-PLATFORM PARSING
-# ========================================
+# HELPERS (SAME)
 def get_spotify_data(url):
     match = re.search(r'spotify\.com/track/([a-zA-Z0-9]+)', url)
     if not match: return None
@@ -121,17 +107,14 @@ def get_media_data(url):
         return get_apple_data(url), 'apple'
     return None, None
 
-# ========================================
 # ROUTES
-# ========================================
 @app.route('/')
 def index():
     if 'user_id' not in session:
         return redirect('/login')
     try:
-        followed = Follow.query.filter_by(follower_id=session['user_id']).all()
-        followed_ids = [f.followed_id for f in followed] + [session['user_id']]
-        posts = Post.query.filter(Post.user_id.in_(followed_ids)).order_by(Post.timestamp.desc()).all()
+        # SIMPLIFIED QUERY — NO Follow
+        posts = Post.query.filter_by(user_id=session['user_id']).order_by(Post.timestamp.desc()).all()
         current_user = User.query.get(session['user_id'])
         return render_template('feed.html', posts=posts, current_user=current_user)
     except Exception as e:
@@ -182,25 +165,11 @@ def post():
         return redirect('/')
     return render_template('post.html')
 
-@app.route('/follow/<int:user_id>')
-def follow(user_id):
-    if 'user_id' not in session or session['user_id'] == user_id:
-        return redirect('/')
-    f = Follow(follower_id=session['user_id'], followed_id=user_id)
-    db.session.add(f)
-    db.session.commit()
-    return redirect('/')
-
 @app.route('/logout')
 def logout():
     session.pop('user_id', None)
     return redirect('/login')
 
-# ========================================
-# RUN SERVER
-# ========================================
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=True)
-
-
+    app.run(host='0.0.0.0', port=port, debug=False)
