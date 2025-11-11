@@ -147,14 +147,20 @@ def register():
 
 @app.route('/post', methods=['GET', 'POST'])
 def post():
-    init_db()  # REQUIRED
+    init_db()  # ADD THIS LINE
     if 'user_id' not in session:
+        flash('Please log in to share a track.', 'error')
         return redirect(url_for('login'))
     
+    current_user = app.User.query.get(session['user_id'])
+    if not current_user:
+        session.pop('user_id', None)
+        return redirect(url_for('login'))
+
     if request.method == 'POST':
         url = request.form.get('url')
         if not url:
-            flash('URL required.')
+            flash('URL required.', 'error')
             return redirect(url_for('post'))
         
         # Parse platform and data
@@ -171,7 +177,7 @@ def post():
             data = get_apple_data(url)
         
         if not data:
-            flash('Unsupported or invalid URL.')
+            flash('Unsupported or invalid URL.', 'error')
             return redirect(url_for('post'))
         
         p = app.Post(
@@ -185,11 +191,10 @@ def post():
         )
         db.session.add(p)
         db.session.commit()
-        flash('Track shared!')
+        flash('Track shared!', 'success')
         return redirect(url_for('index'))
     
-    return render_template('post.html')
-
+    return render_template('post.html', current_user=current_user)
 @app.route('/follow/<int:user_id>')
 def follow(user_id):
     init_db()  # REQUIRED
@@ -269,6 +274,7 @@ with app.app_context():
     db_instance = init_db()
     db_instance.create_all()
     print("Database initialized and tables created.")
+
 
 
 
