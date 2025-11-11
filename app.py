@@ -82,16 +82,21 @@ def get_media_data(url):
 @app.route('/')
 def index():
     init_db()  # REQUIRED
-    if 'user_id' not in session:
-        return render_template('index.html', posts=[], current_user=None)
-    
-    current_user = app.User.query.get(session['user_id'])
+    current_user = None
+    if 'user_id' in session:
+        current_user = app.User.query.get(session['user_id'])
+        if not current_user:
+            session.pop('user_id', None)  # Clean up bad session
+            flash('Session expired. Please log in again.', 'error')
+            return redirect(url_for('login'))
+
     posts = app.Post.query.order_by(app.Post.timestamp.desc()).all()
     
-    # Populate user for each post
+    # Attach username to each post
     for post in posts:
-        post.username = app.User.query.get(post.user_id).username
-    
+        poster = app.User.query.get(post.user_id)
+        post.username = poster.username if poster else "[deleted]"
+
     return render_template('index.html', posts=posts, current_user=current_user)
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -251,10 +256,12 @@ def init_db():
 def before_request():
     init_db()
 
-# Create tables at startup (safe)
+# === CREATE TABLES AT STARTUP (SAFE) ===
 with app.app_context():
     db_instance = init_db()
     db_instance.create_all()
+    print("Database initialized and tables created.")
+
 
 
 
