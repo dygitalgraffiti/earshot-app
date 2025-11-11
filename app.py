@@ -7,10 +7,10 @@ import os
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'earshot-secret-key-2025')
 
-# DATABASE: Use PostgreSQL on Render, fallback to SQLite locally
 app.config['SQLALCHEMY_DATABASE_URI'] = (
     os.environ.get('DATABASE_URL', 'sqlite:///earshot.db')
-    .replace('postgres://', 'postgresql://', 1)  # Render compatibility
+    .replace('postgres://', 'postgresql+psycopg://', 1)
+    + '?client_encoding=utf8'
 )
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
@@ -215,3 +215,4 @@ def create_tables():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
+
