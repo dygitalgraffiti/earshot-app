@@ -188,11 +188,6 @@ def logout():
     flash('Logged out.')
     return redirect('/login')
 
-# ========================= INIT DB ON FIRST REQUEST =========================
-@app.before_first_request
-def create_tables():
-    db.create_all()
-
 # ========================= RUN APP =========================
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
@@ -233,12 +228,12 @@ def init_db():
 
     return db
 
-# Initialize DB on every request (safe)
+# Initialize on every request
 @app.before_request
 def before_request():
     init_db()
 
-# Create tables at startup
+# Create tables once at startup
 with app.app_context():
     init_db()
     db.create_all()
