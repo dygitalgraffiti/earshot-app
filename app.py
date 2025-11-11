@@ -13,8 +13,11 @@ app.config['SQLALCHEMY_DATABASE_URI'] = (
 )
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-db = SQLAlchemy(app)
+# === LAZY DB INIT ===
+db = None  # We'll init this later
+
 # === BLOCK psycopg2 IMPORT (CRITICAL FOR Python 3.13) ===
+# We'll do this INSIDE init_db() to avoid early import
 import sqlalchemy.dialects.postgresql as pg
 pg.psycopg2 = None  # Prevent SQLAlchemy from loading psycopg2
 # =======================================================
@@ -218,6 +221,25 @@ def create_tables():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
+# === LAZY DB INITIALIZATION ===
+def init_db():
+    global db
+    if db is None:
+        db = SQLAlchemy(app)
+        # Block psycopg2 AFTER SQLAlchemy is initialized
+        import sqlalchemy.dialects.postgresql as pg
+        pg.psycopg2 = None
+    return db
+
+# Initialize DB on first request
+@app.before_request
+def before_request():
+    init_db()
+
+# Create tables once
+with app.app_context():
+    init_db()
+    db.create_all()
 
 
 
