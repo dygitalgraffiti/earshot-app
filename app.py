@@ -210,11 +210,9 @@ def init_db():
         app.config['SQLALCHEMY_DATABASE_URI'] = db_uri
 
         # === BLOCK psycopg2 BEFORE SQLAlchemy ===
-        import sqlalchemy.dialects.postgresql as pg
-        pg.psycopg2 = None
-        # ========================================
-
-        db = SQLAlchemy(app)  # Now safe
+import sqlalchemy.dialects.postgresql as pg
+pg.psycopg2 = None
+db = SQLAlchemy(app)  # Now safe
 
         # === MODELS ===
         class User(db.Model):
@@ -239,6 +237,7 @@ def before_request():
 with app.app_context():
     db_instance = init_db()
     db_instance.create_all()
+
 
 
 
