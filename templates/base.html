@@ -1,24 +1,109 @@
-<!DOCTYPE html>
+!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>{% block title %}earshot{% endblock %}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
-    body { font-family: system-ui, sans-serif; margin: 0; padding: 0; background: #f9f9f9; }
-    .container { max-width: 600px; margin: 2rem auto; padding: 1.5rem; background: white; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-    h1 { text-align: center; color: #1d9bf0; }
-    .flash { padding: 0.8rem; margin: 1rem 0; border-radius: 6px; text-align: center; }
-    .flash.error { background: #ffe6e6; color: #d00; }
-    .flash.success { background: #e6f7e6; color: #0a0; }
-    a { color: #1d9bf0; text-decoration: none; }
-    a:hover { text-decoration: underline; }
-    .nav { text-align: center; margin: 1rem 0; }
-    .nav a { margin: 0 1rem; }
+    :root {
+      --primary: #1d9bf0;
+      --primary-dark: #1a8cd8;
+      --bg: #f8f9fa;
+      --card: #ffffff;
+      --text: #1a1a1a;
+      --border: #e1e1e1;
+      --success: #0a0;
+      --error: #d00;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+    .container {
+      max-width: 640px;
+      margin: 2rem auto;
+      padding: 1.5rem;
+      background: var(--card);
+      border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+      border: 1px solid var(--border);
+    }
+    header {
+      text-align: center;
+      margin-bottom: 1.5rem;
+    }
+    h1 {
+      margin: 0;
+      font-size: 2rem;
+      font-weight: 600;
+      color: var(--primary);
+    }
+    .subtitle {
+      color: #666;
+      font-size: 0.95rem;
+      margin-top: 0.25rem;
+    }
+    .flash {
+      padding: 0.75rem 1rem;
+      margin: 1rem 0;
+      border-radius: 8px;
+      font-weight: 500;
+      text-align: center;
+      animation: fadeIn 0.3s ease;
+    }
+    .flash.success {
+      background: #e6f7e6;
+      color: var(--success);
+      border: 1px solid #b3e0b3;
+    }
+    .flash.error {
+      background: #ffe6e6;
+      color: var(--error);
+      border: 1px solid #ffb3b3;
+    }
+    .nav {
+      text-align: center;
+      margin: 1.5rem 0;
+      padding: 1rem 0;
+      border-top: 1px solid var(--border);
+      font-size: 0.95rem;
+    }
+    .nav a {
+      color: var(--primary);
+      text-decoration: none;
+      font-weight: 500;
+      margin: 0 0.75rem;
+      transition: color 0.2s;
+    }
+    .nav a:hover {
+      color: var(--primary-dark);
+      text-decoration: underline;
+    }
+    .user-info {
+      text-align: center;
+      margin-bottom: 1rem;
+      font-size: 0.95rem;
+      color: #444;
+    }
+    .user-info strong {
+      color: var(--primary);
+    }
+    {% block styles %}{% endblock %}
   </style>
 </head>
 <body>
   <div class="container">
+    <header>
+      <h1>earshot</h1>
+      <p class="subtitle">share music. follow friends.</p>
+    </header>
+
+    <!-- Flash Messages -->
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
         {% for category, message in messages %}
@@ -27,18 +112,34 @@
       {% endif %}
     {% endwith %}
 
+    <!-- User Login State -->
+    {% if current_user %}
+      <div class="user-info">
+        Logged in as <strong>{{ current_user.username }}</strong>
+      </div>
+    {% endif %}
+
+    <!-- Main Content -->
     {% block content %}{% endblock %}
+
+    <!-- Navigation -->
+    <div class="nav">
+      <a href="/">Home</a>
+      {% if current_user %}
+        | <a href="/post">Share Track</a>
+        | <a href="/logout">Logout</a>
+      {% else %}
+        | <a href="/login">Login</a>
+        | <a href="/register">Register</a>
+      {% endif %}
+    </div>
   </div>
 
-  <div class="nav">
-    <a href="/">Home</a>
-    {% if session.user_id %}
-      | <a href="/post">Share</a>
-      | <a href="/logout">Logout</a>
-    {% else %}
-      | <a href="/login">Login</a>
-      | <a href="/register">Register</a>
-    {% endif %}
-  </div>
+  <style>
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
 </body>
 </html>
