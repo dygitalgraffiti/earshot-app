@@ -15,11 +15,6 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # === LAZY DB INIT ===
 db = None  # We'll init this later
-
-# === BLOCK psycopg2 IMPORT (CRITICAL FOR Python 3.13) ===
-# We'll do this INSIDE init_db() to avoid early import
-import sqlalchemy.dialects.postgresql as pg
-pg.psycopg2 = None  # Prevent SQLAlchemy from loading psycopg2
 # =======================================================
 # ========================= MEDIA PARSERS =========================
 def get_spotify_data(url):
@@ -237,6 +232,7 @@ def before_request():
 with app.app_context():
     init_db()
     db.create_all()
+
 
 
 
