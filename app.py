@@ -185,41 +185,28 @@ if __name__ == '__main__':
 def init_db():
     global db
     if db is None:
-        # === SET DATABASE URI HERE ===
+        # === SET DATABASE URI ===
         db_uri = (
             os.environ.get('DATABASE_URL', 'sqlite:///earshot.db')
             .replace('postgres://', 'postgresql+psycopg://', 1)
             + '?client_encoding=utf8'
         )
         app.config['SQLALCHEMY_DATABASE_URI'] = db_uri
-        # =============================
 
-        db = SQLAlchemy(app)
+        # === BLOCK psycopg2 BEFORE SQLAlchemy ===
         import sqlalchemy.dialects.postgresql as pg
         pg.psycopg2 = None
-        ...
+        # ========================================
 
+        db = SQLAlchemy(app)  # Now safe
+
+        # === MODELS ===
         class User(db.Model):
-            id = db.Column(db.Integer, primary_key=True)
-            username = db.Column(db.String(80), unique=True, nullable=False)
-            password = db.Column(db.String(120), nullable=False)
-
+            ...
         class Follow(db.Model):
-            id = db.Column(db.Integer, primary_key=True)
-            follower_id = db.Column(db.Integer, db.ForeignKey('user.id'))
-            followed_id = db.Column(db.Integer, db.ForeignKey('user.id'))
-
+            ...
         class Post(db.Model):
-            id = db.Column(db.Integer, primary_key=True)
-            user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
-            platform = db.Column(db.String(20))
-            url = db.Column(db.String(300))
-            title = db.Column(db.String(200))
-            artist = db.Column(db.String(200))
-            thumbnail = db.Column(db.String(300))
-            embed_url = db.Column(db.String(300))
-            timestamp = db.Column(db.DateTime, default=datetime.utcnow)
-            user = db.relationship('User', backref='posts')
+            ...
 
         app.User = User
         app.Follow = Follow
@@ -236,6 +223,7 @@ def before_request():
 with app.app_context():
     db_instance = init_db()
     db_instance.create_all()
+
 
 
 
