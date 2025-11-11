@@ -133,14 +133,25 @@ def login():
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
-        if User.query.filter_by(username=request.form['username']).first():
-            return "Username taken"
-        user = User(username=request.form['username'], password=request.form['password'])
+        username = request.form.get('username')
+        password = request.form.get('password')
+
+        if not username or not password:
+            flash("Both username and password are required.")
+            return redirect(url_for('register'))
+
+        if User.query.filter_by(username=username).first():
+            flash("Username already taken.")
+            return redirect(url_for('register'))
+
+        user = User(username=username, password=password)  # TODO: hash password later
         db.session.add(user)
         db.session.commit()
         session['user_id'] = user.id
-        return redirect('/')
-    return render_template('login.html', register=True)
+        flash("Account created! Welcome to Earshot.")
+        return redirect(url_for('index'))
+
+    return render_template('register.html')
 
 @app.route('/post', methods=['GET', 'POST'])
 def post():
@@ -173,3 +184,4 @@ def logout():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
+
