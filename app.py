@@ -230,7 +230,9 @@ def before_request():
 
 # Create tables at startup (safe)
 with app.app_context():
-    db.create_all()
+    db_instance = init_db()
+    db_instance.create_all()
+
 
 
 
