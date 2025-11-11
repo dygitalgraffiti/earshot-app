@@ -6,12 +6,7 @@ import os
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'earshot-secret-key-2025')
-    os.environ.get('DATABASE_URL', 'sqlite:///earshot.db')
-    .replace('postgres://', 'postgresql+psycopg://', 1)
-    + '?client_encoding=utf8'
-)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
 # === LAZY DB INIT ===
 db = None  # We'll init this later
 # =======================================================
@@ -241,6 +236,7 @@ def before_request():
 with app.app_context():
     db_instance = init_db()
     db_instance.create_all()
+
 
 
 
