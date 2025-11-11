@@ -205,7 +205,6 @@ def init_db():
         import sqlalchemy.dialects.postgresql as pg
         pg.psycopg2 = None
 
-        # === ALL MODELS HERE ===
         class User(db.Model):
             id = db.Column(db.Integer, primary_key=True)
             username = db.Column(db.String(80), unique=True, nullable=False)
@@ -228,17 +227,18 @@ def init_db():
             timestamp = db.Column(db.DateTime, default=datetime.utcnow)
             user = db.relationship('User', backref='posts')
 
-        # Make available globally
         app.User = User
         app.Follow = Follow
         app.Post = Post
-        # ======================
 
     return db
+
+# Initialize DB on every request (safe)
 @app.before_request
 def before_request():
     init_db()
 
+# Create tables at startup
 with app.app_context():
     init_db()
     db.create_all()
