@@ -205,6 +205,7 @@ def init_db():
         db_uri = (
             os.environ.get('DATABASE_URL', 'sqlite:///earshot.db')
             .replace('postgres://', 'postgresql+psycopg://', 1)
+            .replace('postgresql://', 'postgresql+psycopg://', 1)  # FORCE psycopg
             + '?client_encoding=utf8'
         )
         app.config['SQLALCHEMY_DATABASE_URI'] = db_uri
@@ -214,7 +215,7 @@ def init_db():
         pg.psycopg2 = None
         # ========================================
 
-        db = SQLAlchemy(app)  # Now safe
+        db = SQLAlchemy(app)
 
         # === MODELS ===
         class User(db.Model):
@@ -254,6 +255,7 @@ def before_request():
 with app.app_context():
     db_instance = init_db()
     db_instance.create_all()
+
 
 
 
