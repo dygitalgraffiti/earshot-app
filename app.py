@@ -6,7 +6,6 @@ import os
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'earshot-secret-key-2025')
-app.config['SQLALCHEMY_DATABASE_URI'] = (
     os.environ.get('DATABASE_URL', 'sqlite:///earshot.db')
     .replace('postgres://', 'postgresql+psycopg://', 1)
     + '?client_encoding=utf8'
@@ -191,9 +190,19 @@ if __name__ == '__main__':
 def init_db():
     global db
     if db is None:
+        # === SET DATABASE URI HERE ===
+        db_uri = (
+            os.environ.get('DATABASE_URL', 'sqlite:///earshot.db')
+            .replace('postgres://', 'postgresql+psycopg://', 1)
+            + '?client_encoding=utf8'
+        )
+        app.config['SQLALCHEMY_DATABASE_URI'] = db_uri
+        # =============================
+
         db = SQLAlchemy(app)
         import sqlalchemy.dialects.postgresql as pg
         pg.psycopg2 = None
+        ...
 
         class User(db.Model):
             id = db.Column(db.Integer, primary_key=True)
@@ -232,6 +241,7 @@ def before_request():
 with app.app_context():
     db_instance = init_db()
     db_instance.create_all()
+
 
 
 
