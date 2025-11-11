@@ -21,30 +21,6 @@ db = None  # We'll init this later
 import sqlalchemy.dialects.postgresql as pg
 pg.psycopg2 = None  # Prevent SQLAlchemy from loading psycopg2
 # =======================================================
-
-# ========================= MODELS =========================
-class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True, nullable=False)
-    password = db.Column(db.String(120), nullable=False)  # TODO: hash later
-
-class Follow(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    follower_id = db.Column(db.Integer, db.ForeignKey('user.id'))
-    followed_id = db.Column(db.Integer, db.ForeignKey('user.id'))
-
-class Post(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
-    platform = db.Column(db.String(20))
-    url = db.Column(db.String(300))
-    title = db.Column(db.String(200))
-    artist = db.Column(db.String(200))
-    thumbnail = db.Column(db.String(300))
-    embed_url = db.Column(db.String(300))
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
-    user = db.relationship('User', backref='posts')
-
 # ========================= MEDIA PARSERS =========================
 def get_spotify_data(url):
     match = re.search(r'spotify\.com/track/([a-zA-Z0-9]+)', url)
@@ -226,20 +202,48 @@ def init_db():
     global db
     if db is None:
         db = SQLAlchemy(app)
-        # Block psycopg2 AFTER SQLAlchemy is initialized
         import sqlalchemy.dialects.postgresql as pg
         pg.psycopg2 = None
-    return db
 
-# Initialize DB on first request
+        # === ALL MODELS HERE ===
+        class User(db.Model):
+            id = db.Column(db.Integer, primary_key=True)
+            username = db.Column(db.String(80), unique=True, nullable=False)
+            password = db.Column(db.String(120), nullable=False)
+
+        class Follow(db.Model):
+            id = db.Column(db.Integer, primary_key=True)
+            follower_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+            followed_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+
+        class Post(db.Model):
+            id = db.Column(db.Integer, primary_key=True)
+            user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+            platform = db.Column(db.String(20))
+            url = db.Column(db.String(300))
+            title = db.Column(db.String(200))
+            artist = db.Column(db.String(200))
+            thumbnail = db.Column(db.String(300))
+            embed_url = db.Column(db.String(300))
+            timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+            user = db.relationship('User', backref='posts')
+
+        # Make available globally
+        app.User = User
+        app.Follow = Follow
+        app.Post = Post
+        # ======================
+
+    return db
 @app.before_request
 def before_request():
     init_db()
 
-# Create tables once
 with app.app_context():
     init_db()
     db.create_all()
+
+
 
 
 
