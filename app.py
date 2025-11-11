@@ -228,12 +228,12 @@ def init_db():
 
     return db
 
-# Initialize on every request
+# Initialize DB on every request
 @app.before_request
 def before_request():
     init_db()
 
-# Create tables once at startup
+# Create tables at startup (safe)
 with app.app_context():
     init_db()
     db.create_all()
