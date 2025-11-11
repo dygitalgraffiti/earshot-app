@@ -157,23 +157,38 @@ def register():
 def post():
     if 'user_id' not in session:
         return redirect('/login')
+
     if request.method == 'POST':
-        url = request.form['url'].strip()
+        url = request.form.get('url', '').strip()
+        if not url:
+            flash("Please enter a music URL.")
+            return redirect(url_for('post'))
+
         data, platform = get_media_data(url)
         if not data:
-            return "Invalid song link", 400
-        p = Post(
-            user_id=session['user_id'],
-            platform=platform,
-            url=url,
-            title=data['title'],
-            artist=data['artist'],
-            thumbnail=data['thumbnail'],
-            embed_url=data['embed_url']
-        )
-        db.session.add(p)
-        db.session.commit()
+            flash("Unsupported or invalid music link. Try Spotify, YouTube, or Apple Music.")
+            return redirect(url_for('post'))
+
+        try:
+            p = Post(
+                user_id=session['user_id'],
+                platform=platform,
+                url=url,
+                title=data['title'],
+                artist=data['artist'],
+                thumbnail=data['thumbnail'],
+                embed_url=data['embed_url']
+            )
+            db.session.add(p)
+            db.session.commit()
+            flash("Post shared!")
+        except Exception as e:
+            db.session.rollback()
+            flash("Error saving post. Try again.")
+            app.logger.error(f"Post save error: {e}")
+
         return redirect('/')
+
     return render_template('post.html')
 
 @app.route('/logout')
@@ -184,4 +199,5 @@ def logout():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
+
 
