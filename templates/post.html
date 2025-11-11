@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Share Music - Earshot</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="container">
+    <h2>Share a Song</h2>
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <ul class="flash">
+          {% for message in messages %}<li>{{ message }}</li>{% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+
+    <form method="POST">
+      <input type="url" name="url" placeholder="Paste Spotify, YouTube, or Apple Music link" required style="width: 100%; padding: 10px; margin-bottom: 10px;">
+      <button type="submit">Post</button>
+    </form>
+
+    <p><a href="{{ url_for('index') }}">← Back to feed</a></p>
+  </div>
+</body>
+</html>
