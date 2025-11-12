@@ -109,33 +109,18 @@ def index():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    init_db()  # REQUIRED
+    init_db()
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
-        if not username or not password:
-            flash('Both fields required.')
-            return redirect(url_for('login'))
         user = app.User.query.filter_by(username=username, password=password).first()
         if user:
             session['user_id'] = user.id
-            flash('Logged in!')
             return redirect(url_for('index'))
         flash('Invalid credentials.')
         return redirect(url_for('login'))
-    return render_template('login.html')
-    @app.route('/restore-session', methods=['POST'])
-def restore_session():
-    data = request.get_json()
-    user_id = data.get('user_id')
-    if not user_id:
-    return jsonify(success=False), 400
     
-    user = app.User.query.get(user_id)
-    if user:
-        session['user_id'] = user.id
-        return jsonify(success=True)
-    return jsonify(success=False), 401
+    return render_template('login.html')  
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -287,6 +272,7 @@ with app.app_context():
     db_instance = init_db()
     db_instance.create_all()
     print("Database initialized and tables created.")
+
 
 
 
