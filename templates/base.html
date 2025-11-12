@@ -1,6 +1,22 @@
 !DOCTYPE html>
 <html lang="en">
 <head>
+  <script>
+  {% if user_id %}
+    localStorage.setItem('earshot_user_id', '{{ user_id }}');
+  {% endif %}
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const savedId = localStorage.getItem('earshot_user_id');
+    if (savedId && !window.location.pathname.includes('/login') && !window.location.pathname.includes('/register')) {
+      fetch('/restore-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: savedId })
+      });
+    }
+  });
+</script>
   <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
 <meta name="theme-color" content="#1d9bf0">
 
