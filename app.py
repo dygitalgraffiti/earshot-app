@@ -81,8 +81,8 @@ def get_media_data(url):
 # ========================= ROUTES =========================
 @app.route('/')
 def index():
-    init_db()  # REQUIRED
-       posts = app.Post.query.order_by(app.Post.timestamp.desc()).all()
+    init_db()
+    posts = app.Post.query.order_by(app.Post.timestamp.desc()).all()
     
     # Attach username to each post
     for post in posts:
@@ -260,6 +260,7 @@ with app.app_context():
     db_instance = init_db()
     db_instance.create_all()
     print("Database initialized and tables created.")
+
 
 
 
