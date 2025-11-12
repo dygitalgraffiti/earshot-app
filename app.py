@@ -124,6 +124,18 @@ def login():
         flash('Invalid credentials.')
         return redirect(url_for('login'))
     return render_template('login.html')
+    @app.route('/restore-session', methods=['POST'])
+def restore_session():
+    data = request.get_json()
+    user_id = data.get('user_id')
+    if not user_id:
+        return jsonify(success=False), 400
+    
+    user = app.User.query.get(user_id)
+    if user:
+        session['user_id'] = user.id
+        return jsonify(success=True)
+    return jsonify(success=False), 401
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -141,6 +153,7 @@ def register():
         db.session.add(user)
         db.session.commit()
         session['user_id'] = user.id
+        return render_template('index.html', ..., user_id=user.id)
         flash('Account created! Welcome to Earshot.')
         return redirect(url_for('index'))
     return render_template('register.html')
@@ -274,6 +287,7 @@ with app.app_context():
     db_instance = init_db()
     db_instance.create_all()
     print("Database initialized and tables created.")
+
 
 
 
