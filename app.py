@@ -82,31 +82,14 @@ def get_media_data(url):
 @app.route('/')
 def index():
     init_db()  # REQUIRED
-    current_user = None
-
-    if 'user_id' in session:
-        current_user = app.User.query.get(session['user_id'])
-        if not current_user:
-            session.pop('user_id', None)
-            flash('Session expired. Please log in again.', 'error')
-            return redirect(url_for('login'))
-
-    posts = app.Post.query.order_by(app.Post.timestamp.desc()).all()
+       posts = app.Post.query.order_by(app.Post.timestamp.desc()).all()
     
     # Attach username to each post
     for post in posts:
         poster = app.User.query.get(post.user_id)
         post.username = poster.username if poster else "[deleted]"
 
-    return render_template('index.html', posts=posts, current_user=current_user)
-    
-    # Attach username to each post
-    for post in posts:
-        poster = app.User.query.get(post.user_id)
-        post.username = poster.username if poster else "[deleted]"
-
-    return render_template('index.html', posts=posts, current_user=current_user)
-
+    return render_template('index.html', posts=posts)
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     init_db()
@@ -277,6 +260,7 @@ with app.app_context():
     db_instance = init_db()
     db_instance.create_all()
     print("Database initialized and tables created.")
+
 
 
 
