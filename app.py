@@ -129,7 +129,7 @@ def restore_session():
     data = request.get_json()
     user_id = data.get('user_id')
     if not user_id:
-        return jsonify(success=False), 400
+    return jsonify(success=False), 400
     
     user = app.User.query.get(user_id)
     if user:
@@ -287,6 +287,7 @@ with app.app_context():
     db_instance = init_db()
     db_instance.create_all()
     print("Database initialized and tables created.")
+
 
 
 
