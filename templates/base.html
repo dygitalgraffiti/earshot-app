@@ -1,11 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <!-- PWA Manifest & Service Worker -->
+  <!-- PWA: Manifest + Service Worker -->
   <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
   <meta name="theme-color" content="#1d9bf0">
 
-  <!-- Service Worker Registration -->
+  <!-- Service Worker Registration (KEEP THIS) -->
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
@@ -16,32 +16,37 @@
     }
   </script>
 
-  <!-- Session Restore: Save + Restore user_id -->
+  <!-- NEW: LocalStorage Login + UI Update (REPLACE OLD SESSION SCRIPT) -->
   <script>
-    // Save user_id on login/register
-    {% if user_id %}
-      localStorage.setItem('earshot_user_id', '{{ user_id }}');
-    {% endif %}
+    // Load user from localStorage
+    const earshotUser = JSON.parse(localStorage.getItem('earshot_user') || 'null');
+    window.earshotUser = earshotUser;
 
-    // Restore session on every page load (except auth pages)
     document.addEventListener('DOMContentLoaded', () => {
-      const savedId = localStorage.getItem('earshot_user_id');
-      const isAuthPage = ['/login', '/register'].includes(window.location.pathname);
+      if (earshotUser) {
+        // Show "Logged in as..."
+        const userInfo = document.querySelector('.user-info');
+        if (userInfo) {
+          userInfo.innerHTML = `Logged in as <strong>${earshotUser.username}</strong>`;
+          userInfo.style.display = 'block';
+        }
 
-      if (savedId && !isAuthPage) {
+        // Update nav
+        const nav = document.querySelector('.nav');
+        if (nav) {
+          nav.innerHTML = `
+            <a href="/">Home</a>
+            | <a href="/post">Share Track</a>
+            | <a href="/" onclick="localStorage.removeItem('earshot_user'); location.reload(); return false;">Logout</a>
+          `;
+        }
+
+        // Optional: keep Redis alive
         fetch('/restore-session', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ user_id: savedId })
-        })
-        .then(response => response.json())
-        .then(data => {
-          if (data.success && !document.querySelector('.user-info')) {
-            // Force reload once to show logged-in UI
-            window.location.reload();
-          }
-        })
-        .catch(err => console.error('Session restore failed:', err));
+          body: JSON.stringify({ user_id: earshotUser.id })
+        }).catch(() => {});
       }
     });
   </script>
@@ -75,7 +80,7 @@
     .container {
       max-width: 640px;
       margin: 2rem auto;
-      padding: 1.5rem;
+ padding: 1.5rem;
       background: var(--card);
       border-radius: 16px;
       box-shadow: 0 4px 20px rgba(0,0,0,0.08);
@@ -137,6 +142,7 @@
       margin-bottom: 1rem;
       font-size: 0.95rem;
       color: #444;
+      display: none; /* Hidden until JS shows it */
     }
     .user-info strong {
       color: var(--primary);
