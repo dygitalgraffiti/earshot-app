@@ -177,24 +177,28 @@
     {% block content %}{% endblock %}
 
     <!-- Navigation -->
-    <div class="nav">
-      <a href="/">Home</a>
-      {% if current_user %}
-        | <a href="/post">Share Track</a>
-        | <a href="/logout" onclick="return confirm('Log out?')">Logout</a>
-      {% else %}
-        | <a href="/login">Login</a>
-        | <a href="/register">Register</a>
-      {% endif %}
-    </div>
-  </div>
+<div class="nav">
+  <a href="/">Home</a>
+  <span id="logged-in-nav" style="display: none;">
+    | <a href="/post">Share Track</a>
+    | <a href="/" onclick="localStorage.removeItem('earshot_user'); location.reload(); return false;">Logout</a>
+  </span>
+  <span id="logged-out-nav">
+    | <a href="/login">Login</a>
+    | <a href="/register">Register</a>
+  </span>
+</div>
 
-  <!-- Animation -->
-  <style>
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(-10px); }
-      to { opacity: 1; transform: translateY(0); }
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    if (window.earshotUser) {
+      document.querySelector('.user-info').innerHTML = `Logged in as <strong>${window.earshotUser.username}</strong>`;
+      document.querySelector('.user-info').style.display = 'block';
+      document.getElementById('logged-in-nav').style.display = 'inline';
+      document.getElementById('logged-out-nav').style.display = 'none';
     }
+  });
+</script>
   </style>
 </body>
 </html>
