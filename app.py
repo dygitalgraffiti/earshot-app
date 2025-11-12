@@ -115,32 +115,37 @@ def login():
         password = request.form.get('password')
         user = app.User.query.filter_by(username=username, password=password).first()
         if user:
-            session['user_id'] = user.id
-            return redirect(url_for('index'))
-        flash('Invalid credentials.')
-        return redirect(url_for('login'))
+            return jsonify({
+                'success': True,
+                'user_id': user.id,
+                'username': user.username
+            })
+        else:
+            return jsonify({'success': False, 'error': 'Invalid credentials'}), 401
     
-    return render_template('login.html')  
+    return render_template('login.html')
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
-    init_db()  # REQUIRED
+    init_db()
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
         if not username or not password:
-            flash('Both fields required.')
-            return redirect(url_for('register'))
+            return jsonify({'success': False, 'error': 'Both fields required'}), 400
         if app.User.query.filter_by(username=username).first():
-            flash('Username already taken.')
-            return redirect(url_for('register'))
+            return jsonify({'success': False, 'error': 'Username taken'}), 400
+        
         user = app.User(username=username, password=password)
         db.session.add(user)
         db.session.commit()
-        session['user_id'] = user.id
-        return render_template('index.html', ..., user_id=user.id)
-        flash('Account created! Welcome to Earshot.')
-        return redirect(url_for('index'))
+        
+        return jsonify({
+            'success': True,
+            'user_id': user.id,
+            'username': user.username
+        })
+    
     return render_template('register.html')
 
 @app.route('/post', methods=['GET', 'POST'])
@@ -272,6 +277,7 @@ with app.app_context():
     db_instance = init_db()
     db_instance.create_all()
     print("Database initialized and tables created.")
+
 
 
 
