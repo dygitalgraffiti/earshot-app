@@ -8,12 +8,12 @@
   "theme_color": "#1d9bf0",
   "icons": [
     {
-      "src": "https://earshot-app.onrender.com/static/icon-192.png",
+      "src": "/static/icon-192.png",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "https://earshot-app.onrender.com/static/icon-512.png",
+      "src": "/static/icon-512.png",
       "sizes": "512x512",
       "type": "image/png"
     }
