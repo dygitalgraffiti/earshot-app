@@ -1,38 +1,58 @@
-!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <script>
-  {% if user_id %}
-    localStorage.setItem('earshot_user_id', '{{ user_id }}');
-  {% endif %}
+  <!-- PWA Manifest & Service Worker -->
+  <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+  <meta name="theme-color" content="#1d9bf0">
 
-  document.addEventListener('DOMContentLoaded', () => {
-    const savedId = localStorage.getItem('earshot_user_id');
-    if (savedId && !window.location.pathname.includes('/login') && !window.location.pathname.includes('/register')) {
-      fetch('/restore-session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: savedId })
+  <!-- Service Worker Registration -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('{{ url_for("static", filename="sw.js") }}')
+          .then(reg => console.log('SW registered:', reg))
+          .catch(err => console.error('SW failed:', err));
       });
     }
-  });
-</script>
-  <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
-<meta name="theme-color" content="#1d9bf0">
+  </script>
 
-<script>
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-     navigator.serviceWorker.register('{{ url_for("static", filename="sw.js") }}')
-        .then(reg => console.log('SW registered', reg))
-        .catch(err => console.log('SW failed', err));
+  <!-- Session Restore: Save + Restore user_id -->
+  <script>
+    // Save user_id on login/register
+    {% if user_id %}
+      localStorage.setItem('earshot_user_id', '{{ user_id }}');
+    {% endif %}
+
+    // Restore session on every page load (except auth pages)
+    document.addEventListener('DOMContentLoaded', () => {
+      const savedId = localStorage.getItem('earshot_user_id');
+      const isAuthPage = ['/login', '/register'].includes(window.location.pathname);
+
+      if (savedId && !isAuthPage) {
+        fetch('/restore-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: savedId })
+        })
+        .then(response => response.json())
+        .then(data => {
+          if (data.success && !document.querySelector('.user-info')) {
+            // Force reload once to show logged-in UI
+            window.location.reload();
+          }
+        })
+        .catch(err => console.error('Session restore failed:', err));
+      }
     });
-  }
-</script>
+  </script>
+
+  <!-- Meta & Fonts -->
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>{% block title %}earshot{% endblock %}</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <!-- CSS -->
   <style>
     :root {
       --primary: #1d9bf0;
@@ -155,7 +175,7 @@
       <a href="/">Home</a>
       {% if current_user %}
         | <a href="/post">Share Track</a>
-        | <a href="/logout">Logout</a>
+        | <a href="/logout" onclick="return confirm('Log out?')">Logout</a>
       {% else %}
         | <a href="/login">Login</a>
         | <a href="/register">Register</a>
@@ -163,6 +183,7 @@
     </div>
   </div>
 
+  <!-- Animation -->
   <style>
     @keyframes fadeIn {
       from { opacity: 0; transform: translateY(-10px); }
