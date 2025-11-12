@@ -1,13 +1,33 @@
 {% extends "base.html" %}
-
 {% block title %}Register{% endblock %}
 
 {% block content %}
-    <h2>Create Account</h2>
-    <form method="POST">
-        <input type="text" name="username" placeholder="Choose a username" required autofocus>
-        <input type="password" name="password" placeholder="Password" required>
-        <button type="submit">Register</button>
-    </form>
-    <p>Already have an account? <a href="{{ url_for('login') }}">Log in</a></p>
+  <h2>Register</h2>
+  <form id="register-form">
+    <input type="text" name="username" placeholder="Username" required>
+    <input type="password" name="password" placeholder="Password" required>
+    <button type="submit">Register</button>
+  </form>
+  <p>Have an account? <a href="/login">Log in here</a></p>
+
+  <script>
+    document.getElementById('register-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const formData = new FormData(e.target);
+      const res = await fetch('/register', {
+        method: 'POST',
+        body: formData
+      });
+      const data = await res.json();
+      if (data.success) {
+        localStorage.setItem('earshot_user', JSON.stringify({
+          id: data.user_id,
+          username: data.username
+        }));
+        window.location.href = '/';
+      } else {
+        alert(data.error || 'Registration failed');
+      }
+    });
+  </script>
 {% endblock %}
