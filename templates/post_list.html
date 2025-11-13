@@ -11,7 +11,7 @@
 
     <div class="card-info">
       <div class="title">{{ p.title }}</div>
-      {% if p artist and p.artist not in ['Unknown Artist','Unknown','Creator'] %}
+      {% if p.artist and p.artist not in ['Unknown Artist','Unknown','Creator'] %}
         <div class="artist">{{ p.artist }}</div>
       {% endif %}
       <div class="platform">
