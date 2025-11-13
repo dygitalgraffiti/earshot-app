@@ -4,22 +4,24 @@
     <div class="album-art">
       <img src="{{ p.thumbnail or '/static/placeholder.png' }}" alt="{{ p.title }}">
     </div>
-    <div class="card-info">
-      <div class="title">{{ p.title }}</div>
-      <div class="artist">{{ p.artist }}</div>
-      <div class="platform">
-        {% if p.platform == 'youtube' %}
-          YouTube Music
-        {% elif p.platform == 'spotify' %}
-          Spotify
-        {% elif p.platform == 'apple' %}
-          Apple Music
-        {% else %}
-          {{ p.platform|capitalize }}
-        {% endif %}
-      </div>
-      <div class="domain">{{ p.url|url_domain }}</div>
-    </div>
+    div class="card-info">
+  <div class="title">{{ p.title }}</div>
+  {% if p.artist and p.artist.lower() not in p.title.lower() %}
+    <div class="artist">{{ p.artist }}</div>
+  {% endif %}
+  <div class="platform">
+    {% if p.platform == 'youtube' %}
+      YouTube Music
+    {% elif p.platform == 'spotify' %}
+      Spotify
+    {% elif p.platform == 'apple' %}
+      Apple Music
+    {% else %}
+      {{ p.platform|capitalize }}
+    {% endif %}
+  </div>
+  <div class="domain">{{ p.url|url_domain }}</div>
+</div>
   </a>
 
   <div class="post-header">
