@@ -558,4 +558,35 @@ nav {
 .post-header {
   padding: 0.6rem 1.3rem 0.8rem !important; /* ← MATCH CARD PADDING */
 }
+/* ────────────────────────────────────── */
+/*  DELETE BUTTON (visible only to owner) */
+/* ────────────────────────────────────── */
+.post-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.6rem 1.3rem 0.8rem;
+  background: #111;
+  font-size: 0.9rem;
+}
 
+.post-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.delete-btn {
+  background: #ff4444;
+  color: white;
+  border: none;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.delete-btn:hover {
+  background: #cc0000;
+}
