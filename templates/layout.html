@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{% block title %}Earshot{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <nav>
+    <a href="{{ url_for('index') }}">Earshot</a>
+    {% if session.user_id %}
+      <a href="{{ url_for('feed_following') }}">Following</a>
+      <a href="{{ url_for('profile', username=session.username) }}">Profile</a>
+      <a href="{{ url_for('post') }}">New Post</a>
+      <a href="{{ url_for('logout') }}">Logout</a>
+    {% else %}
+      <a href="{{ url_for('login') }}">Login</a>
+      <a href="{{ url_for('register') }}">Register</a>
+    {% endif %}
+  </nav>
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <ul class="flashes">
+        {% for m in messages %}<li>{{ m }}</li>{% endfor %}
+      </ul>
+    {% endif %}
+  {% endwith %}
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>
