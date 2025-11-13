@@ -272,7 +272,7 @@ def post():
         flash('Posted!')
         return redirect(url_for('index'))
 
-    return render_template('post_form.html'
+    return render_template('post_form.html')
 
 # ---------- PROFILE ----------
 @app.route('/profile/<username>')
@@ -341,6 +341,7 @@ if __name__ == '__main__':
         print("Tables ensured")
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
+
 
 
 
