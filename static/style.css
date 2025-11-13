@@ -397,11 +397,9 @@ nav {
   color: #999;
 }
 
-/* Center container for chat flow */
+/* Chat layout: allow bubbles to float left/right */
 .container {
   max-width: 600px;
   margin: 0 auto;
   padding: 1rem;
-  display: flex;
-  flex-direction: column;
 }
