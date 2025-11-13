@@ -151,25 +151,23 @@ def login_required(f):
 # ---------- ROUTES ----------
 @app.route('/')
 def index():
-    # Global feed (latest posts)
     posts = (
         Post.query
         .order_by(Post.timestamp.desc())
         .limit(50)
         .all()
     )
-    # Attach username for template
     for p in posts:
         p.username = p.author.username if p.author else "[deleted]"
+        p.is_mine = 'user_id' in session and p.user_id == session['user_id']
     return render_template('index.html', posts=posts)
 
 @app.route('/feed/following')
 @login_required
 def feed_following():
-    # Personal feed – only posts from people you follow + your own
     user = User.query.get(session['user_id'])
     followed_ids = [f.followed_id for f in user.following]
-    followed_ids.append(user.id)   # include own posts
+    followed_ids.append(user.id)
     posts = (
         Post.query
         .filter(Post.user_id.in_(followed_ids))
@@ -179,6 +177,7 @@ def feed_following():
     )
     for p in posts:
         p.username = p.author.username if p.author else "[deleted]"
+        p.is_mine = 'user_id' in session and p.user_id == session['user_id']
     return render_template('feed.html', posts=posts, title="Following")
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -318,5 +317,6 @@ if __name__ == '__main__':
         print("Tables ensured")
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
+
 
 
