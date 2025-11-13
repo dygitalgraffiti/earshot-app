@@ -1,0 +1,31 @@
+{% extends "layout.html" %}
+{% block title %}New Post{% endblock %}
+{% block content %}
+<div class="container" style="max-width:500px;margin:2rem auto;padding:1rem;">
+  <h2 style="text-align:center;color:#1d9bf0;margin-bottom:1rem;">Share a Track</h2>
+  
+  <form method="post" style="display:flex;flex-direction:column;gap:1rem;">
+    <input 
+      type="url" 
+      name="url" 
+      placeholder="Paste Spotify, YouTube, or Apple Music link..." 
+      required 
+      style="padding:0.75rem;border-radius:8px;border:1px solid #444;background:#222;color:white;font-size:1rem;"
+    >
+    <button 
+      type="submit"
+      style="background:#1d9bf0;color:white;border:none;padding:0.75rem;border-radius:8px;font-weight:600;font-size:1rem;cursor:pointer;"
+    >
+      Post
+    </button>
+  </form>
+
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <div style="margin-top:1rem;padding:0.75rem;background:#330000;border-radius:8px;color:#ff6b6b;">
+        {% for m in messages %}{{ m }}<br>{% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+</div>
+{% endblock %}
