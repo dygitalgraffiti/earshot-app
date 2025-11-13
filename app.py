@@ -130,7 +130,14 @@ def parse_track_url(url: str):
         data = _apple(url)
         return 'apple', data
     return None, None
+from urllib.parse import urlparse
 
+@app.template_filter('url_domain')
+def url_domain(url):
+    try:
+        return urlparse(url).netloc.replace('www.', '')
+    except:
+        return url
 # ---------- HELPERS ----------
 def login_required(f):
     from functools import wraps
@@ -311,4 +318,5 @@ if __name__ == '__main__':
         print("Tables ensured")
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
+
 
