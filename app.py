@@ -68,16 +68,20 @@ def _spotify(url):
     if not m: return None
     track_id = m.group(1)
     try:
-        o = requests.get(f"https://open.spotify.com/oembed?url={url}").json()
-        full = o['title']
-        parts = full.split(' · ')
+        oembed = requests.get(f"https://open.spotify.com/oembed?url={url}").json()
+        full = oembed['title']
+        # Spotify format: "Song · Artist"
+        if ' · ' in full:
+            song, artist = [x.strip() for x in full.split(' · ', 1)]
+        else:
+            song, artist = full, 'Unknown Artist'
         return {
-            'title': parts[0],
-            'artist': parts[1] if len(parts) > 1 else '',
-            'thumbnail': o['thumbnail_url'],
+            'title': song,
+            'artist': artist,
+            'thumbnail': oembed['thumbnail_url'],
             'embed_url': f"https://open.spotify.com/embed/track/{track_id}"
         }
-    except Exception:
+    except:
         return None
 
 def _youtube(url):
@@ -87,40 +91,31 @@ def _youtube(url):
     video_id = m.group(1)
     try:
         o = requests.get(f"https://www.youtube.com/oembed?url={url}&format=json").json()
-        full_title = o['title']
-        
-        # Try multiple separators: " - ", " · ", " | "
-        separators = [' - ', ' · ', ' | ']
-        title = full_title
-        artist = 'Unknown Artist'
-        
-        for sep in separators:
-            if sep in full_title:
-                parts = full_title.split(sep, 1)
-                artist = parts[0].strip()
-                title = parts[1].strip()
-                break
-        
-        # Fallback: if no separator, use full title as song
-        if title == full_title:
-            title = full_title
-            artist = 'Unknown Artist'
-        
+        full = o['title']
+        # Try multiple separators
+        for sep in [' - ', ' · ', ' | ', ' — ']:
+            if sep in full:
+                artist, title = [x.strip() for x in full.rsplit(sep, 1)]
+                return {
+                    'title': title or full,
+                    'artist': artist or 'Unknown Artist',
+                    'thumbnail': o['thumbnail_url'],
+                    'embed_url': f"https://www.youtube.com/embed/{video_id}"
+                }
+        # Fallback
         return {
-            'title': title,
-            'artist': artist,
+            'title': full,
+            'artist': 'Unknown Artist',
             'thumbnail': o['thumbnail_url'],
             'embed_url': f"https://www.youtube.com/embed/{video_id}"
         }
-    except Exception as e:
-        print(f"YouTube parse error: {e}")
+    except:
         return {
             'title': 'YouTube Video',
             'artist': 'Unknown',
             'thumbnail': '',
             'embed_url': f"https://www.youtube.com/embed/{video_id}"
         }
-
 def _apple(url):
     m = re.search(r'music\.apple\.com/[^/]+/song/(\d+)', url)
     if not m: return None
@@ -339,6 +334,7 @@ if __name__ == '__main__':
         print("Tables ensured")
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
+
 
 
 
