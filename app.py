@@ -70,21 +70,38 @@ def parse_url(url):
     if not url:
         return None
 
-    # YouTube
+    # === YOUTUBE ===
     yt_match = re.search(r'(?:youtube\.com/watch\?v=|youtu\.be/|music\.youtube\.com/watch\?v=)([a-zA-Z0-9_-]+)', url)
     if yt_match:
         video_id = yt_match.group(1)
         try:
-            oembed = requests.get(f"https://www.youtube.com/oembed?url={url}&format=json").json()
-            full = oembed['title']
-            artist = 'Unknown Artist'
-            title = full
-            for sep in [' - ', ' · ', ' | ']:
-                if sep in full:
-                    artist, title = [x.strip() for x in full.split(sep, 1)]
+            oembed = requests.get(f"https://www.youtube.com/oembed?url={url}&format=json", timeout=5).json()
+            full_title = oembed['title'].strip()
+
+            # Smart split: try multiple patterns
+            title = full_title
+            artist = "Unknown Artist"
+
+            patterns = [
+                r'^(.+?)\s*[-–—·|]\s*(.+)$',           # Artist - Title
+                r'^(.+?)\s*[:]\s*(.+)$',               # Artist: Title
+                r'^(.+?)\s*\(\s*(.+?)\s*\)$',          # Title (Artist)
+                r'^(.*?)\s+by\s+(.+)$',                # Title by Artist
+            ]
+
+            for pattern in patterns:
+                m = re.match(pattern, full_title, re.IGNORECASE)
+                if m:
+                    if 'by' in pattern.lower():
+                        title, artist = m.groups()
+                    else:
+                        artist, title = m.groups()
+                    artist = artist.strip()
+                    title = title.strip()
                     break
+
             return {
-                'title': title,
+                'title': title or full_title,
                 'artist': artist,
                 'thumbnail': oembed['thumbnail_url'],
                 'embed_url': f"https://www.youtube.com/embed/{video_id}",
@@ -93,20 +110,20 @@ def parse_url(url):
         except:
             pass
 
-    # Spotify
+    # === SPOTIFY ===
     sp_match = re.search(r'spotify\.com/track/([a-zA-Z0-9]+)', url)
     if sp_match:
         track_id = sp_match.group(1)
         try:
-            oembed = requests.get(f"https://open.spotify.com/oembed?url={url}").json()
+            oembed = requests.get(f"https://open.spotify.com/oembed?url={url}", timeout=5).json()
             full = oembed['title']
             if ' · ' in full:
-                song, artist = full.split(' · ', 1)
+                song, artist = [x.strip() for x in full.split(' · ', 1)]
             else:
                 song, artist = full, 'Unknown Artist'
             return {
-                'title': song.strip(),
-                'artist': artist.strip(),
+                'title': song,
+                'artist': artist,
                 'thumbnail': oembed['thumbnail_url'],
                 'embed_url': f"https://open.spotify.com/embed/track/{track_id}",
                 'platform': 'spotify'
@@ -395,6 +412,7 @@ if __name__ == '__main__':
         print("Tables ensured")
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
+
 
 
 
