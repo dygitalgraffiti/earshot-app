@@ -1,15 +1,6 @@
-{% extends "base.html" %}
-
-{% block title %}Feed{% endblock %}
-
+{% extends "layout.html" %}
+{% block title %}{{ title }}{% endblock %}
 {% block content %}
-    {% for post in posts %}
-        <div class="post">
-            <p><strong>@{{ post.user.username }}</strong> shared:</p>
-            <p><em>{{ post.title }} – {{ post.artist }}</em></p>
-            <iframe src="{{ post.embed_url }}" allowfullscreen></iframe>
-        </div>
-    {% else %}
-        <p>No posts yet. <a href="{{ url_for('post') }}">Share the first track!</a></p>
-    {% endfor %}
+<h2>{{ title }} Feed</h2>
+{% include "post_list.html" %}
 {% endblock %}
