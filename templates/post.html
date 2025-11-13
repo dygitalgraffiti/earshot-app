@@ -1,71 +1,23 @@
-{% extends "base.html" %}
-{% block title %}Share Track{% endblock %}
-
+{% extends "layout.html" %}
+{% block title %}New Post{% endblock %}
 {% block content %}
-  <h2>Share a Track</h2>
-  <p>Paste a link from Spotify, YouTube, or Apple Music</p>
-
-  <form id="post-form">
-    <input 
-      type="text" 
-      name="url" 
-      placeholder="https://..." 
-      required 
-      style="width:100%; padding:1rem; margin:1rem 0; font-size:1rem; border-radius:12px; border:1px solid #ccc;"
-    >
-    <button 
-      type="submit" 
-      style="width:100%; padding:1rem; background:#1d9bf0; color:white; border:none; border-radius:12px; font-weight:600; cursor:pointer;"
-    >
-      Share to Feed
-    </button>
-  </form>
-
-  <script>
-    document.getElementById('post-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
-
-      const user = window.earshotUser;
-      if (!user) {
-        alert('Log in to share');
-        window.location.href = '/login';
-        return;
-      }
-
-      const formData = new FormData(e.target);
-      const url = formData.get('url').trim();
-      if (!url) {
-        alert('Please enter a URL');
-        return;
-      }
-
-      const btn = e.target.querySelector('button');
-      const originalText = btn.textContent;
-      btn.disabled = true;
-      btn.textContent = 'Sharing...';
-
-      try {
-        const res = await fetch('/post', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            user_id: user.id,
-            url: url
-          })
-        });
-
-        const data = await res.json();
-        if (data.success) {
-          window.location.href = data.redirect;
-        } else {
-          alert(data.error || 'Failed to post');
-        }
-      } catch (err) {
-        alert('Network error');
-      } finally {
-        btn.disabled = false;
-        btn.textContent = originalText;
-      }
-    });
-  </script>
+<h2>Share a Track</h2>
+<form id="post-form">
+  <input type="url" name="url" placeholder="Spotify / YouTube / Apple Music URL" required style="width:100%;padding:8px;">
+  <button type="submit" style="margin-top:8px;">Post</button>
+</form>
+<script>
+document.getElementById('post-form').addEventListener('submit', async e=>{
+  e.preventDefault();
+  const url = e.target.url.value;
+  const resp = await fetch('/post', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({url})
+  });
+  const data = await resp.json();
+  if (data.success) location.href = data.redirect;
+  else alert(data.error);
+});
+</script>
 {% endblock %}
