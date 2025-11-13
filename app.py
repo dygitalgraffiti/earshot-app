@@ -257,12 +257,27 @@ def parse_track_url(url):
             'thumbnail': '',
             'embed_url': url.replace('open.spotify.com', 'open.spotify.com/embed')
         }
-    elif 'youtube.com' in url or 'youtu.be' in url:
+      elif 'youtube.com' in url or 'youtu.be' in url or 'music.youtube.com' in url:
+        video_id = ''
+        if 'v=' in url:
+            video_id = url.split('v=')[1].split('&')[0]
+        elif 'youtu.be/' in url:
+            video_id = url.split('youtu.be/')[1].split('?')[0]
+        elif 'music.youtube.com' in url:
+            # Extract video ID from music.youtube.com/watch?v=...
+            if 'watch?v=' in url:
+                video_id = url.split('watch?v=')[1].split('&')[0]
+        
+        if not video_id:
+            return None, None
+            
+        embed = f"https://www.youtube.com/embed/{video_id}"
         return 'youtube', {
             'title': 'YouTube Video',
             'artist': 'Creator',
-            'thumbnail': '',
-            'embed_url': url.replace('watch?v=', 'embed/')
+            'thumbnail': f"https://img.youtube.com/vi/{video_id}/0.jpg",  # THUMBNAIL!
+            'embed_url': embed
+        }
         }
     elif 'music.apple.com' in url:
         return 'apple', {
@@ -272,6 +287,7 @@ def parse_track_url(url):
             'embed_url': url
         }
     return None, None
+
 
 
 
