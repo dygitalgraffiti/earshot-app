@@ -61,6 +61,60 @@ class Post(db.Model):
     thumbnail = db.Column(db.String(300))
     embed_url = db.Column(db.String(300))
     timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+# ---------------PARSE TEST ---------
+import re
+import requests
+
+def parse_url(url):
+    url = url.strip()
+    if not url:
+        return None
+
+    # YouTube
+    yt_match = re.search(r'(?:youtube\.com/watch\?v=|youtu\.be/|music\.youtube\.com/watch\?v=)([a-zA-Z0-9_-]+)', url)
+    if yt_match:
+        video_id = yt_match.group(1)
+        try:
+            oembed = requests.get(f"https://www.youtube.com/oembed?url={url}&format=json").json()
+            full = oembed['title']
+            artist = 'Unknown Artist'
+            title = full
+            for sep in [' - ', ' · ', ' | ']:
+                if sep in full:
+                    artist, title = [x.strip() for x in full.split(sep, 1)]
+                    break
+            return {
+                'title': title,
+                'artist': artist,
+                'thumbnail': oembed['thumbnail_url'],
+                'embed_url': f"https://www.youtube.com/embed/{video_id}",
+                'platform': 'youtube'
+            }
+        except:
+            pass
+
+    # Spotify
+    sp_match = re.search(r'spotify\.com/track/([a-zA-Z0-9]+)', url)
+    if sp_match:
+        track_id = sp_match.group(1)
+        try:
+            oembed = requests.get(f"https://open.spotify.com/oembed?url={url}").json()
+            full = oembed['title']
+            if ' · ' in full:
+                song, artist = full.split(' · ', 1)
+            else:
+                song, artist = full, 'Unknown Artist'
+            return {
+                'title': song.strip(),
+                'artist': artist.strip(),
+                'thumbnail': oembed['thumbnail_url'],
+                'embed_url': f"https://open.spotify.com/embed/track/{track_id}",
+                'platform': 'spotify'
+            }
+        except:
+            pass
+
+    return None
 
 # ---------- MEDIA PARSERS ----------
 def _spotify(url):
@@ -341,6 +395,7 @@ if __name__ == '__main__':
         print("Tables ensured")
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
+
 
 
 
