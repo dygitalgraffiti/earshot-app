@@ -1,0 +1,12 @@
+{% for p in posts %}
+<div class="post">
+  <div class="post-header">
+    <a href="{{ url_for('profile', username=p.username) }}">{{ p.username }}</a>
+    <span class="time">{{ p.timestamp.strftime('%b %d %H:%M') }}</span>
+  </div>
+  <p>{{ p.title }} – {{ p.artist }}</p>
+  <iframe src="{{ p.embed_url }}" width="100%" height="80" frameborder="0"></iframe>
+</div>
+{% else %}
+<p>No posts yet.</p>
+{% endfor %}
