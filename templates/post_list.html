@@ -23,9 +23,13 @@
 </div>
   </a>
 
-  <div class="post-header">
-    <a href="{{ url_for('profile', username=p.username) }}" class="username">{{ p.username }}</a>
+<div class="post-header">
+  <a href="{{ url_for('profile', username=p.username) }}" class="username">{{ p.username }}</a>
+  <div class="post-actions">
     <span class="time">{{ p.timestamp.strftime('%b %d %H:%M') }}</span>
+    {% if p.is_mine %}
+      <button onclick="deletePost({{ p.id }})" class="delete-btn">Delete</button>
+    {% endif %}
   </div>
 </div>
 {% else %}
