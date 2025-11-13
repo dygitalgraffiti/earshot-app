@@ -475,3 +475,36 @@ nav {
   margin-right: auto;
   margin-left: 1.5rem;
 }
+/* WIDER CARDS + TEXT WRAP */
+.music-card {
+  max-width: 380px !important;
+  width: calc(100% - 2rem) !important;
+  margin: 1.5rem 1rem !important;
+}
+
+/* FORCE TEXT WRAP */
+.title,
+.artist,
+.platform,
+.domain {
+  white-space: normal !important;
+  word-wrap: break-word !important;
+  overflow-wrap: break-word !important;
+  overflow: visible !important;
+}
+
+/* ALTERNATING SIDES */
+.music-card.mine {
+  margin-left: auto !important;
+  margin-right: 1.5rem !important;
+}
+
+.music-card.theirs {
+  margin-right: auto !important;
+  margin-left: 1.5rem !important;
+}
+
+/* MORE PADDING */
+.card-info {
+  padding: 1rem 1.2rem !important;
+}
