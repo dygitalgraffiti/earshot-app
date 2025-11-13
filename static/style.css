@@ -692,4 +692,13 @@ nav {
   border-top-left-radius: 4px;
   border-bottom-left-radius: 4px;
 }
+.overlay-user {
+  font-weight: 600;
+  color: #1d9bf0;
+  text-decoration: none;
+  cursor: pointer;
+}
 
+.overlay-user:hover {
+  text-decoration: underline;
+}
