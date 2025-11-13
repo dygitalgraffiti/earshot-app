@@ -9,7 +9,10 @@
            onclick="event.stopPropagation();">
           {{ p.username }}
         </a>
-        <span class="overlay-time" data-utc="{{ p.timestamp.strftime('%Y-%m-%dT%H:%M:%S') }}Z"></span>
+        <span class="overlay-time" 
+      data-utc="{{ p.timestamp.strftime('%Y-%m-%dT%H:%M:%S') }}Z">
+  {{ p.timestamp.strftime('%b %d %I:%M %p').lstrip('0') }}
+</span>
       </div>
     </div>
 
@@ -71,21 +74,40 @@ async function deletePost(id) {
 }
 
 // Convert UTC → Local Time (100% accurate)
+<script>
+async function deletePost(id) {
+  if (confirm('Delete this post?')) {
+    const res = await fetch(`/delete/${id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    if (res.ok) {
+      location.reload();
+    } else {
+      alert('Failed to delete');
+    }
+  }
+}
+
+// Convert UTC → Seattle (Pacific Time)
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.overlay-time').forEach(el => {
     const utcStr = el.getAttribute('data-utc');
-    if (utcStr) {
-      const date = new Date(utcStr);  // Parses ISO with Z = UTC
-      const local = date.toLocaleString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true
-      }).replace(/,/, '');  // Remove comma
-      el.textContent = local;
-    }
+    if (!utcStr) return;
+
+    const date = new Date(utcStr);
+    if (isNaN(date)) return;
+
+    const seattleTime = date.toLocaleString('en-US', {
+      timeZone: 'America/Los_Angeles',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    }).replace(/,/, '');
+
+    el.textContent = seattleTime;
   });
 });
 </script>
-
