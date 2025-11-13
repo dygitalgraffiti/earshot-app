@@ -326,6 +326,16 @@ def unfollow(user_id):
         db.session.delete(rel)
         db.session.commit()
     return jsonify({'status': 'unfollowed'})
+# -------------- DELETE --------------
+@app.route('/delete/<int:post_id>', methods=['POST'])
+@login_required
+def delete_post(post_id):
+    post = Post.query.get_or_404(post_id)
+    if post.user_id != session['user_id']:
+        abort(403)
+    db.session.delete(post)
+    db.session.commit()
+    return jsonify(success=True)
 
 # ---------- RUN ----------
 if __name__ == '__main__':
@@ -334,6 +344,7 @@ if __name__ == '__main__':
         print("Tables ensured")
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
+
 
 
 
