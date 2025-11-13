@@ -1,33 +1,6 @@
-{% extends "base.html" %}
+{% extends "layout.html" %}
 {% block title %}Home{% endblock %}
-
 {% block content %}
-  <div id="feed">
-    <h2>Your Feed</h2>
-    {% if posts %}
-      {% for post in posts %}
-        <div class="post-card">
-          <p><strong>{{ post.username }}</strong> shared:</p>
-          <p><strong>{{ post.title }}</strong> by {{ post.artist }}</p>
-          <iframe src="{{ post.embed_url }}" width="100%" height="80" frameborder="0"></iframe>
-        </div>
-      {% endfor %}
-    {% else %}
-      <p>No tracks yet. Share one!</p>
-    {% endif %}
-  </div>
-
-  <div id="auth-prompt" style="text-align: center; display: none;">
-    <h2>Welcome to earshot</h2>
-    <p><a href="/login">Log in</a> or <a href="/register">register</a> to share music.</p>
-  </div>
-
-  <script>
-    document.addEventListener('DOMContentLoaded', () => {
-      if (!window.earshotUser) {
-        document.getElementById('feed').style.display = 'none';
-        document.getElementById('auth-prompt').style.display = 'block';
-      }
-    });
-  </script>
+<h2>Global Feed</h2>
+{% include "post_list.html" %}
 {% endblock %}
