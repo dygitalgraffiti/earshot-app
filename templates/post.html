@@ -1,48 +1,43 @@
-% extends "base.html" %}
+{% extends "base.html" %}
 {% block title %}Share Track{% endblock %}
 
 {% block content %}
-  <div style="text-align: center; padding: 2rem 0;">
-    <h2>Share a Track</h2>
-    <p style="color: #666; margin-bottom: 1.5rem;">
-      Paste a link from Spotify, YouTube, or Apple Music
-    </p>
+  <h2>Share a Track</h2>
+  <p>Paste a link from Spotify, YouTube, or Apple Music</p>
 
-    <form method="POST" style="max-width: 500px; margin: 0 auto;">
-      <input 
-        type="text" 
-        name="url" 
-        placeholder="https://open.spotify.com/track/..." 
-        required 
-        style="
-          width: 100%; 
-          padding: 1rem; 
-          font-size: 1rem; 
-          border: 1px solid #ccc; 
-          border-radius: 12px; 
-          margin-bottom: 1rem;
-        "
-      />
-      <button 
-        type="submit"
-        style="
-          width: 100%; 
-          padding: 1rem; 
-          background: #1d9bf0; 
-          color: white; 
-          border: none; 
-          border-radius: 12px; 
-          font-weight: 600; 
-          font-size: 1rem;
-          cursor: pointer;
-        "
-      >
-        Share to Feed
-      </button>
-    </form>
+  <form id="post-form">
+    <input type="text" name="url" placeholder="https://..." required style="width:100%; padding:1rem; margin:1rem 0; font-size:1rem; border-radius:12px; border:1px solid #ccc;">
+    <button type="submit" style="width:100%; padding:1rem; background:#1d9bf0; color:white; border:none; border-radius:12px; font-weight:600;">Share to Feed</button>
+  </form>
 
-    <p style="margin-top: 2rem;">
-      <a href="/" style="color: #1d9bf0;">Back to Feed</a>
-    </p>
-  </div>
+  <script>
+    document.getElementById('post-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const user = window.earshotUser;
+      if (!user) {
+        alert('Log in to share');
+        window.location.href = '/login';
+        return;
+      }
+
+      const formData = new FormData(e.target);
+      const url = formData.get('url');
+
+      const res = await fetch('/post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: user.id,
+          url: url
+        })
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        window.location.href = data.redirect;
+      } else {
+        alert(data.error || 'Failed to post');
+      }
+    });
+  </script>
 {% endblock %}
