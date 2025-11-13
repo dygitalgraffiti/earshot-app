@@ -508,3 +508,54 @@ nav {
 .card-info {
   padding: 1rem 1.2rem !important;
 }
+/* WIDER CARDS WITH BETTER MARGINS */
+.music-card {
+  max-width: 380px !important;
+  width: calc(100% - 2rem) !important;
+  margin: 1.5rem 1rem !important;
+  border-radius: 18px;
+  overflow: visible !important;
+}
+
+/* TEXT WRAP + ALIGNMENT */
+.title,
+.artist,
+.platform,
+.domain {
+  white-space: normal !important;
+  word-wrap: break-word !important;
+  overflow-wrap: break-word !important;
+  overflow: visible !important;
+  hyphens: auto;
+  text-align: left !important;  /* ← FIX: LEFT ALIGN DOMAIN */
+  line-height: 1.2 !important; /* ← CLEAN SPACING */
+  margin-bottom: 0.1rem !important;
+}
+
+.domain {
+  font-size: 0.75rem !important; /* ← SLIGHTLY SMALLER FOR FIT */
+  color: #888 !important;
+}
+
+/* PUSH SELF POSTS FARTHER RIGHT */
+.music-card.mine {
+  margin-left: auto !important;
+  margin-right: 2rem !important; /* ← MORE RIGHT MARGIN (from 1.5rem) */
+  max-width: 380px !important;
+}
+
+.music-card.theirs {
+  margin-right: auto !important;
+  margin-left: 2rem !important;  /* ← MATCH FOR BALANCE */
+  max-width: 380px !important;
+}
+
+/* EXTRA PADDING INSIDE CARD */
+.card-info {
+  padding: 1rem 1.3rem !important; /* ← WIDER PADDING */
+}
+
+.post-header {
+  padding: 0.6rem 1.3rem 0.8rem !important; /* ← MATCH CARD PADDING */
+}
+
