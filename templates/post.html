@@ -6,13 +6,25 @@
   <p>Paste a link from Spotify, YouTube, or Apple Music</p>
 
   <form id="post-form">
-    <input type="text" name="url" placeholder="https://..." required style="width:100%; padding:1rem; margin:1rem 0; font-size:1rem; border-radius:12px; border:1px solid #ccc;">
-    <button type="submit" style="width:100%; padding:1rem; background:#1d9bf0; color:white; border:none; border-radius:12px; font-weight:600;">Share to Feed</button>
+    <input 
+      type="text" 
+      name="url" 
+      placeholder="https://..." 
+      required 
+      style="width:100%; padding:1rem; margin:1rem 0; font-size:1rem; border-radius:12px; border:1px solid #ccc;"
+    >
+    <button 
+      type="submit" 
+      style="width:100%; padding:1rem; background:#1d9bf0; color:white; border:none; border-radius:12px; font-weight:600; cursor:pointer;"
+    >
+      Share to Feed
+    </button>
   </form>
 
   <script>
     document.getElementById('post-form').addEventListener('submit', async (e) => {
       e.preventDefault();
+
       const user = window.earshotUser;
       if (!user) {
         alert('Log in to share');
@@ -21,22 +33,38 @@
       }
 
       const formData = new FormData(e.target);
-      const url = formData.get('url');
+      const url = formData.get('url').trim();
+      if (!url) {
+        alert('Please enter a URL');
+        return;
+      }
 
-      const res = await fetch('/post', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: user.id,
-          url: url
-        })
-      });
+      const btn = e.target.querySelector('button');
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Sharing...';
 
-      const data = await res.json();
-      if (data.success) {
-        window.location.href = data.redirect;
-      } else {
-        alert(data.error || 'Failed to post');
+      try {
+        const res = await fetch('/post', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id: user.id,
+            url: url
+          })
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          window.location.href = data.redirect;
+        } else {
+          alert(data.error || 'Failed to post');
+        }
+      } catch (err) {
+        alert('Network error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
       }
     });
   </script>
