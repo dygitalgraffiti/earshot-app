@@ -440,3 +440,38 @@ nav {
 .music-card:hover {
   transform: translateY(-4px);
 }
+/* ────────────────────────────────────── */
+/*  WIDER CARDS + TEXT WRAP (NO CUTOFF)   */
+/* ────────────────────────────────────── */
+.music-card {
+  max-width: 380px !important;     /* ← WIDER */
+  width: calc(100% - 2rem);
+  margin: 1.5rem 1rem !important;
+}
+
+/* Allow long text to wrap */
+.title,
+.artist,
+.platform,
+.domain {
+  white-space: normal !important;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  hyphens: auto;
+}
+
+/* Slightly more padding inside */
+.card-info {
+  padding: 1rem 1.1rem;
+}
+
+/* Keep your float logic */
+.music-card.mine {
+  margin-left: auto;
+  margin-right: 1.5rem;
+}
+
+.music-card.theirs {
+  margin-right: auto;
+  margin-left: 1.5rem;
+}
