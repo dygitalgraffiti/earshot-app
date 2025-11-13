@@ -7,7 +7,7 @@
   <a href="{{ url_for('profile', username=p.username) }}" class="overlay-user" onclick="event.stopPropagation();">
     {{ p.username }}
   </a>
-  <span class="overlay-time">{{ p.timestamp.strftime('%b %d %H:%M') }}</span>
+  <span class="overlay-time">{{ p.timestamp.strftime('%b %d %I:%M %p').lstrip('0') }}</span>
 </div>
 
     <div class="card-info">
