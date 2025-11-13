@@ -194,3 +194,102 @@ nav {
 .nav-right a:hover {
   text-decoration: underline;
 }
+/* ────────────────────────────────────── */
+/*  iPHONE MESSENGER-STYLE MUSIC CARD     */
+/* ────────────────────────────────────── */
+.music-card {
+  background: #1a1a1a;
+  border-radius: 16px;
+  overflow: hidden;
+  margin: 1rem 0;
+  max-width: 280px;
+  width: 100%;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  transition: transform 0.2s;
+}
+
+.music-card:hover {
+  transform: translateY(-4px);
+}
+
+.card-link {
+  text-decoration: none;
+  color: inherit;
+  display: block;
+}
+
+.album-art {
+  width: 100%;
+  height: 0;
+  padding-bottom: 100%; /* 1:1 square */
+  position: relative;
+  overflow: hidden;
+  background: #333;
+}
+
+.album-art img {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 12px 12px 0 0;
+}
+
+.card-info {
+  padding: 0.75rem;
+  background: #222;
+}
+
+.title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.artist {
+  font-size: 0.85rem;
+  color: #aaa;
+  margin-top: 0.1rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.platform {
+  font-size: 0.8rem;
+  color: #1d9bf0;
+  margin-top: 0.35rem;
+  font-weight: 500;
+}
+
+.domain {
+  font-size: 0.75rem;
+  color: #777;
+  margin-top: 0.1rem;
+}
+
+/* Keep your existing .post-header */
+.post-header {
+  padding: 0.5rem 0.75rem 0.75rem;
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+}
+
+.username {
+  color: #1d9bf0;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.username:hover {
+  text-decoration: underline;
+}
+
+.time {
+  color: #aaa;
+}
