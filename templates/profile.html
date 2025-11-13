@@ -1,0 +1,34 @@
+{% extends "layout.html" %}
+{% block title %}{{ profile_user.username }}{% endblock %}
+{% block content %}
+<div class="profile">
+  <h2>{{ profile_user.username }}</h2>
+  <p>Following: {{ following }} | Followers: {{ followers }}</p>
+
+  {% if session.user_id and session.user_id != profile_user.id %}
+    <form id="follow-form" data-id="{{ profile_user.id }}">
+      <button type="button" id="follow-btn"
+              class="{{ 'following' if is_following else '' }}">
+        {{ 'Unfollow' if is_following else 'Follow' }}
+      </button>
+    </form>
+  {% endif %}
+
+  <h3>Recent Posts</h3>
+  {% include "post_list.html" with context %}
+</div>
+
+<script>
+document.getElementById('follow-btn')?.addEventListener('click', async e=>{
+  const btn = e.target;
+  const id = btn.parentElement.dataset.id;
+  const url = btn.classList.contains('following')
+      ? `/unfollow/${id}` : `/follow/${id}`;
+  const resp = await fetch(url, {method:'POST', credentials:'include'});
+  if (resp.ok ){
+    btn.classList.toggle('following');
+    btn.textContent = btn.classList.contains('following') ? 'Unfollow' : 'Follow';
+  }
+});
+</script>
+{% endblock %}
