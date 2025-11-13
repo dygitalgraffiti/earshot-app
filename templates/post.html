@@ -1,23 +1,32 @@
-{% extends "layout.html" %}
-{% block title %}New Post{% endblock %}
-{% block content %}
-<h2>Share a Track</h2>
-<form id="post-form">
-  <input type="url" name="url" placeholder="Spotify / YouTube / Apple Music URL" required style="width:100%;padding:8px;">
-  <button type="submit" style="margin-top:8px;">Post</button>
-</form>
-<script>
-document.getElementById('post-form').addEventListener('submit', async e=>{
-  e.preventDefault();
-  const url = e.target.url.value;
-  const resp = await fetch('/post', {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({url})
-  });
-  const data = await resp.json();
-  if (data.success) location.href = data.redirect;
-  else alert(data.error);
-});
-</script>
-{% endblock %}
+{% for p in posts %}
+<div class="chat-bubble {% if p.username == session.username %}mine{% else %}theirs{% endif %}">
+  <a href="{{ p.embed_url }}" target="_blank" class="card-link">
+    <div class="album-art">
+      <img src="{{ p.thumbnail or '/static/placeholder.png' }}" alt="{{ p.title }}">
+    </div>
+    <div class="card-info">
+      <div class="title">{{ p.title }}</div>
+      <div class="artist">{{ p.artist }}</div>
+      <div class="platform">
+        {% if p.platform == 'youtube' %}
+          YouTube Music
+        {% elif p.platform == 'spotify' %}
+          Spotify
+        {% elif p.platform == 'apple' %}
+          Apple Music
+        {% else %}
+          {{ p.platform|capitalize }}
+        {% endif %}
+      </div>
+      <div class="domain">{{ p.url|url_domain }}</div>
+    </div>
+  </a>
+
+  <div class="bubble-footer">
+    <span class="username">{{ p.username }}</span>
+    <span class="time">{{ p.timestamp.strftime('%H:%M') }}</span>
+  </div>
+</div>
+{% else %}
+<p style="text-align:center;color:#666;margin:2rem;">No posts yet.</p>
+{% endfor %}
