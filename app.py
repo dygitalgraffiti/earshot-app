@@ -249,7 +249,21 @@ def index():
         p.username = p.author.username if p.author else "[deleted]"
         p.is_mine = 'user_id' in session and p.user_id == session['user_id']
     return render_template('index.html', posts=posts)
+@app.route('/edit/<int:post_id>', methods=['GET', 'POST'])
+@login_required
+def edit_post(post_id):
+    post = Post.query.get_or_404(post_id)
+    if post.user_id != session['user_id']:
+        abort(403)
 
+    if request.method == 'POST':
+        post.title = request.form['title'].strip() or post.title
+        post.artist = request.form['artist'].strip() or post.artist
+        db.session.commit()
+        flash('Updated!')
+        return redirect(url_for('index'))
+
+    return render_template('edit_post.html', post=post)
 @app.route('/feed/following')
 @login_required
 def feed_following():
