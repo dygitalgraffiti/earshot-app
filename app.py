@@ -133,54 +133,53 @@ def register():
 
 @app.route('/post', methods=['GET', 'POST'])
 def post():
-    init_db()  # ADD THIS LINE
-    if 'user_id' not in session:
-        flash('Please log in to share a track.', 'error')
-        return redirect(url_for('login'))
-    
-    current_user = app.User.query.get(session['user_id'])
-    if not current_user:
-        session.pop('user_id', None)
-        return redirect(url_for('login'))
+    # GET: Show form
+    if request.method == 'GET':
+        return render_template('post.html')
 
-    if request.method == 'POST':
-        url = request.form.get('url')
-        if not url:
-            flash('URL required.', 'error')
-            return redirect(url_for('post'))
-        
-        # Parse platform and data
-        platform = None
-        data = None
-        if 'spotify.com' in url:
-            platform = 'spotify'
-            data = get_spotify_data(url)
-        elif 'youtube.com' in url or 'youtu.be' in url:
-            platform = 'youtube'
-            data = get_youtube_data(url)
-        elif 'music.apple.com' in url:
-            platform = 'apple'
-            data = get_apple_data(url)
-        
-        if not data:
-            flash('Unsupported or invalid URL.', 'error')
-            return redirect(url_for('post'))
-        
-        p = app.Post(
-            user_id=session['user_id'],
-            platform=platform,
-            url=url,
-            title=data['title'],
-            artist=data['artist'],
-            thumbnail=data['thumbnail'],
-            embed_url=data['embed_url']
-        )
-        db.session.add(p)
-        db.session.commit()
-        flash('Track shared!', 'success')
-        return redirect(url_for('index'))
-    
-    return render_template('post.html', current_user=current_user)
+    # POST: Handle track share
+    url = request.form.get('url')
+    if not url:
+        flash('URL required', 'error')
+        return redirect('/post')
+
+    # Get current user from localStorage (via JS later)
+    # For now, we'll let JS send user_id
+    # But we need to accept it from JSON
+    if request.is_json:
+        data = request.get_json()
+        user_id = data.get('user_id')
+        url = data.get('url')
+    else:
+        # Fallback: check if JS sent it
+        user_id = request.form.get('user_id')
+
+    if not user_id:
+        return jsonify({'error': 'Not logged in'}), 401
+
+    user = app.User.query.get(user_id)
+    if not user:
+        return jsonify({'error': 'Invalid user'}), 401
+
+    # Parse URL and save post
+    platform, data = parse_track_url(url)
+    if not data:
+        flash('Unsupported URL', 'error')
+        return redirect('/post')
+
+    post = app.Post(
+        user_id=user.id,
+        url=url,
+        platform=platform,
+        title=data['title'],
+        artist=data['artist'],
+        thumbnail=data['thumbnail'],
+        embed_url=data['embed_url']
+    )
+    db.session.add(post)
+    db.session.commit()
+
+    return jsonify({'success': True, 'redirect': '/'})
 @app.route('/follow/<int:user_id>')
 def follow(user_id):
     init_db()  # REQUIRED
@@ -260,6 +259,7 @@ with app.app_context():
     db_instance = init_db()
     db_instance.create_all()
     print("Database initialized and tables created.")
+
 
 
 
