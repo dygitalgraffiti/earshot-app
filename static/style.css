@@ -403,3 +403,25 @@ nav {
   margin: 0 auto;
   padding: 1rem;
 }
+/* ────────────────────────────────────── */
+/*  LEFT/RIGHT FLOAT FOR MUSIC CARDS      */
+/* ────────────────────────────────────── */
+.music-card {
+  max-width: 280px;
+  margin: 1rem auto;
+  transition: transform 0.2s;
+}
+
+.music-card.mine {
+  margin-left: auto;
+  margin-right: 1rem;
+}
+
+.music-card.theirs {
+  margin-right: auto;
+  margin-left: 1rem;
+}
+
+.music-card:hover {
+  transform: translateY(-4px);
+}
