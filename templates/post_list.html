@@ -3,23 +3,32 @@
   <a href="{{ p.embed_url }}" target="_blank" class="card-link">
     <div class="album-art">
       <img src="{{ p.thumbnail or '/static/placeholder.png' }}" alt="{{ p.title }}">
+      <div class="thumb-overlay">
+        <span class="overlay-user">{{ p.username }}</span>
+        <span class="overlay-time">{{ p.timestamp.strftime('%b %d %H:%M') }}</span>
+      </div>
     </div>
-<div class="title">{{ p.title }}</div>
-{% if p.artist and p.artist not in ['Unknown Artist', 'Unknown', 'Creator'] %}
-  <div class="artist">{{ p.artist }}</div>
-{% endif %}
-  <div class="platform">
-    {% if p.platform == 'youtube' %}
-      YouTube Music
-    {% elif p.platform == 'spotify' %}
-      Spotify
-    {% elif p.platform == 'apple' %}
-      Apple Music
-    {% else %}
-      {{ p.platform|capitalize }}
-    {% endif %}
-  </div>
-  <div class="domain">{{ p.url|url_domain }}</div>
+
+    <div class="card-info">
+      <div class="title">{{ p.title }}</div>
+      {% if p artist and p.artist not in ['Unknown Artist','Unknown','Creator'] %}
+        <div class="artist">{{ p.artist }}</div>
+      {% endif %}
+      <div class="platform">
+        {% if p.platform == 'youtube' %}YouTube Music
+        {% elif p.platform == 'spotify' %}Spotify
+        {% elif p.platform == 'apple' %}Apple Music
+        {% else %}{{ p.platform|capitalize }}{% endif %}
+      </div>
+      <div class="domain">{{ p.url|url_domain }}</div>
+    </div>
+  </a>
+
+  {% if p.is_mine %}
+    <div class="post-actions">
+      <button onclick="deletePost({{ p.id }})" class="delete-btn">Delete</button>
+    </div>
+  {% endif %}
 </div>
   </a>
 
