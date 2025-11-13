@@ -250,21 +250,23 @@ with app.app_context():
     db_instance.create_all()
     print("Database initialized and tables created.")
 def parse_track_url(url):
+    url = url.strip()
+    
     if 'spotify.com' in url:
+        embed = url.replace('open.spotify.com', 'open.spotify.com/embed')
         return 'spotify', {
             'title': 'Spotify Track',
             'artist': 'Artist',
             'thumbnail': '',
-            'embed_url': url.replace('open.spotify.com', 'open.spotify.com/embed')
+            'embed_url': embed
         }
-      elif 'youtube.com' in url or 'youtu.be' in url or 'music.youtube.com' in url:
+    elif 'youtube.com' in url or 'youtu.be' in url or 'music.youtube.com' in url:
         video_id = ''
         if 'v=' in url:
             video_id = url.split('v=')[1].split('&')[0]
         elif 'youtu.be/' in url:
             video_id = url.split('youtu.be/')[1].split('?')[0]
         elif 'music.youtube.com' in url:
-            # Extract video ID from music.youtube.com/watch?v=...
             if 'watch?v=' in url:
                 video_id = url.split('watch?v=')[1].split('&')[0]
         
@@ -275,9 +277,8 @@ def parse_track_url(url):
         return 'youtube', {
             'title': 'YouTube Video',
             'artist': 'Creator',
-            'thumbnail': f"https://img.youtube.com/vi/{video_id}/0.jpg",  # THUMBNAIL!
+            'thumbnail': f"https://img.youtube.com/vi/{video_id}/0.jpg",
             'embed_url': embed
-        }
         }
     elif 'music.apple.com' in url:
         return 'apple', {
@@ -286,6 +287,7 @@ def parse_track_url(url):
             'thumbnail': '',
             'embed_url': url
         }
+    
     return None, None
 
 
