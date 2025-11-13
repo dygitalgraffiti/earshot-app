@@ -1,5 +1,5 @@
 {% for p in posts %}
-<div class="music-card">
+<div class="music-card {% if p.is_mine %}mine{% else %}theirs{% endif %}">
   <a href="{{ p.embed_url }}" target="_blank" class="card-link">
     <div class="album-art">
       <img src="{{ p.thumbnail or '/static/placeholder.png' }}" alt="{{ p.title }}">
