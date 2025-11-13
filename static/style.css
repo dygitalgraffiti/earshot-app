@@ -590,3 +590,59 @@ nav {
 .delete-btn:hover {
   background: #cc0000;
 }
+/* ────────────────────────────────────── */
+/*  USERNAME ON THUMBNAIL + NO GREY CORNERS */
+/* ────────────────────────────────────── */
+
+/* Remove grey background that shows in corners */
+.album-art {
+  background: transparent !important;
+}
+
+/* Full-cover image, no gaps */
+.album-art img {
+  border-radius: 16px 16px 0 0 !important;
+  display: block;
+}
+
+/* Overlay on top of image */
+.thumb-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 0.6rem 1rem;
+  background: linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.6) 100%);
+  color: #fff;
+  font-size: 0.85rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  border-radius: 0 0 16px 16px;
+}
+
+.overlay-user {
+  font-weight: 600;
+  color: #1d9bf0;
+}
+
+.overlay-time {
+  font-weight: 500;
+  color: #ccc;
+}
+
+/* Keep delete button below */
+.post-actions {
+  padding: 0.5rem 1rem;
+  text-align: right;
+}
+.delete-btn {
+  background: #ff4444;
+  color: white;
+  border: none;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.delete-btn:hover { background: #cc0000; }
