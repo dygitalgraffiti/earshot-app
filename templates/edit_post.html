@@ -1,0 +1,18 @@
+{% extends "layout.html" %}
+{% block title %}Edit Post{% endblock %}
+{% block content %}
+<div class="container" style="max-width:500px;margin:2rem auto;padding:1rem;">
+  <h2 style="text-align:center;color:#1d9bf0;margin-bottom:1rem;">Edit Post</h2>
+  
+  <form method="post" style="display:flex;flex-direction:column;gap:1rem;">
+    <input type="text" name="title" value="{{ post.title }}" placeholder="Song title" 
+           style="padding:0.75rem;border-radius:8px;border:1px solid #444;background:#222;color:white;font-size:1rem;">
+    <input type="text" name="artist" value="{{ post.artist }}" placeholder="Artist (optional)" 
+           style="padding:0.75rem;border-radius:8px;border:1px solid #444;background:#222;color:white;font-size:1rem;">
+    <button type="submit" 
+            style="background:#1d9bf0;color:white;border:none;padding:0.75rem;border-radius:8px;font-weight:600;">
+      Save
+    </button>
+  </form>
+</div>
+{% endblock %}
