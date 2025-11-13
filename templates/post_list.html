@@ -57,19 +57,16 @@ async function deletePost(id) {
   }
 }
 
-// Convert UTC → Seattle (Pacific Time)
+// Convert UTC → User's Local Time (auto-detects timezone)
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.overlay-time').forEach(el => {
     const utcStr = el.getAttribute('data-utc');
     if (!utcStr) return;
 
-    // Parse as UTC
     const date = new Date(utcStr);
     if (isNaN(date.getTime())) return;
 
-    // Convert to Pacific Time
-    const pacificTime = date.toLocaleString('en-US', {
-      timeZone: 'America/Los_Angeles',
+    const localTime = date.toLocaleString('en-US', {
       month: 'short',
       day: 'numeric',
       hour: 'numeric',
@@ -77,7 +74,7 @@ document.addEventListener('DOMContentLoaded', () => {
       hour12: true
     }).replace(/,/, '');
 
-    el.textContent = pacificTime;
+    el.textContent = localTime;
   });
 });
 </script>
