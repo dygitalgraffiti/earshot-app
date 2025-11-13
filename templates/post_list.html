@@ -4,7 +4,7 @@
     <div class="album-art">
       <img src="{{ p.thumbnail or '/static/placeholder.png' }}" alt="{{ p.title }}">
     </div>
- <div class="title">{{ p.title }}</div>
+<div class="title">{{ p.title }}</div>
 {% if p.artist and p.artist not in ['Unknown Artist', 'Unknown', 'Creator'] %}
   <div class="artist">{{ p.artist }}</div>
 {% endif %}
