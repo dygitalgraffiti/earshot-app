@@ -1,166 +1,250 @@
-from flask import Flask, render_template, request, session, redirect, url_for, flash, jsonify
-from flask_sqlalchemy import SQLAlchemy
-import requests, re
-from datetime import datetime
+# app.py
 import os
+import re
+import requests
+from datetime import datetime
+from flask import (
+    Flask, render_template, request, session, redirect,
+    url_for, flash, jsonify, abort
+)
+from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import UniqueConstraint
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'earshot-secret-key-2025')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-# === LAZY DB INIT ===
-db = None  # We'll init this later
-# =======================================================
-# ========================= MEDIA PARSERS =========================
-def get_spotify_data(url):
-    match = re.search(r'spotify\.com/track/([a-zA-Z0-9]+)', url)
-    if not match: return None
-    track_id = match.group(1)
+
+# ---------- DATABASE ----------
+db_uri = (
+    os.environ.get('DATABASE_URL', 'sqlite:///earshot.db')
+    .replace('postgres://', 'postgresql+psycopg://', 1)
+    .replace('postgresql://', 'postgresql+psycopg://', 1)
+    + '?client_encoding=utf8'
+)
+app.config['SQLALCHEMY_DATABASE_URI'] = db_uri
+db = SQLAlchemy(app)
+
+# ---------- MODELS ----------
+class User(db.Model):
+    __tablename__ = 'user'
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password = db.Column(db.String(120), nullable=False)   # plain-text for demo only!
+
+    posts = db.relationship('Post', backref='author', lazy='dynamic')
+    following = db.relationship(
+        'Follow', foreign_keys='Follow.follower_id',
+        backref='follower', lazy='dynamic')
+    followers = db.relationship(
+        'Follow', foreign_keys='Follow.followed_id',
+        backref='followed', lazy='dynamic')
+
+    def is_following(self, other_user):
+        return self.following.filter_by(followed_id=other_user.id).first() is not None
+
+class Follow(db.Model):
+    __tablename__ = 'follow'
+    id = db.Column(db.Integer, primary_key=True)
+    follower_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    followed_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+
+    __table_args__ = (UniqueConstraint('follower_id', 'followed_id', name='unique_follow'),)
+
+class Post(db.Model):
+    __tablename__ = 'post'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    platform = db.Column(db.String(20))
+    url = db.Column(db.String(300))
+    title = db.Column(db.String(200))
+    artist = db.Column(db.String(200))
+    thumbnail = db.Column(db.String(300))
+    embed_url = db.Column(db.String(▄▄300))
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+# ---------- MEDIA PARSERS ----------
+def _spotify(url):
+    m = re.search(r'spotify\.com/track/([a-zA-Z0-9]+)', url)
+    if not m: return None
+    track_id = m.group(1)
     try:
-        oembed = requests.get(f"https://open.spotify.com/oembed?url={url}").json()
-        full = oembed['title']
+        o = requests.get(f"https://open.spotify.com/oembed?url={url}").json()
+        full = o['title']
         parts = full.split(' · ')
-        song = parts[0]
-        artist = parts[1] if len(parts) > 1 else ''
         return {
-            'title': song,
-            'artist': artist,
-            'thumbnail': oembed['thumbnail_url'],
+            'title': parts[0],
+            'artist': parts[1] if len(parts) > 1 else '',
+            'thumbnail': o['thumbnail_url'],
             'embed_url': f"https://open.spotify.com/embed/track/{track_id}"
         }
-    except:
+    except Exception:
         return None
 
-def get_youtube_data(url):
+def _youtube(url):
     url = re.sub(r'music\.youtube\.com', 'youtube.com', url)
-    match = re.search(r'youtube\.com/watch\?v=([a-zA-Z0-9_-]+)', url)
-    if not match: return None
-    video_id = match.group(1)
+    m = re.search(r'youtube\.com/watch\?v=([a-zA-Z0-9_-]+)', url)
+    if not m: return None
+    video_id = m.group(1)
     try:
-        oembed = requests.get(f"https://www.youtube.com/oembed?url={url}&format=json").json()
-        title = oembed['title']
-        artist = title.split(' - ')[0] if ' - ' in title else 'Artist'
-        song = title.split(' - ')[1] if ' - ' in title else title
+        o = requests.get(f"https://www.youtube.com/oembed?url={url}&format=json").json()
+        title = o['title']
+        artist, song = (title.split(' - ', 1) + [''])[:2]
+        if not song: song = title
         return {
             'title': song,
-            'artist': artist,
-            'thumbnail': oembed['thumbnail_url'],
+            'artist': artist or 'Creator',
+            'thumbnail': o['thumbnail_url'],
             'embed_url': f"https://www.youtube.com/embed/{video_id}"
         }
-    except:
+    except Exception:
         return None
 
-def get_apple_data(url):
-    match = re.search(r'music\.apple\.com/[^/]+/song/(\d+)', url)
-    if not match: return None
-    song_id = match.group(1)
-    embed_base = url.replace('/song/', '/embed/song/')
+def _apple(url):
+    m = re.search(r'music\.apple\.com/[^/]+/song/(\d+)', url)
+    if not m: return None
+    song_id = m.group(1)
     try:
-        api_url = f"https://itunes.apple.com/lookup?id={song_id}&entity=song"
-        data = requests.get(api_url).json()
-        if data['resultCount'] > 0:
-            track = data['results'][0]
-            return {
-                'title': track['trackName'],
-                'artist': track['artistName'],
-                'thumbnail': track['artworkUrl100'].replace('100x100', '300x300'),
-                'embed_url': embed_base
-            }
-    except:
-        pass
-    return None
+        data = requests.get(f"https://itunes.apple.com/lookup?id={song_id}&entity=song").json()
+        if data['resultCount'] == 0: return None
+        track = data['results'][0]
+        thumb = track['artworkUrl100'].replace('100x100', '300x300')
+        embed = url.replace('/song/', '/embed/song/')
+        return {
+            'title': track['trackName'],
+            'artist': track['artistName'],
+            'thumbnail': thumb,
+            'embed_url': embed
+        }
+    except Exception:
+        return None
 
-def get_media_data(url):
+def parse_track_url(url: str):
+    url = url.strip()
     if 'spotify.com' in url:
-        return get_spotify_data(url), 'spotify'
-    elif 'youtube.com' in url or 'music.youtube.com' in url:
-        return get_youtube_data(url), 'youtube'
-    elif 'music.apple.com' in url:
-        return get_apple_data(url), 'apple'
+        data = _spotify(url)
+        return 'spotify', data
+    if 'youtube.com' in url or 'youtu.be' in url or 'music.youtube.com' in url:
+        data = _youtube(url)
+        return 'youtube', data
+    if 'music.apple.com' in url:
+        data = _apple(url)
+        return 'apple', data
     return None, None
 
-# ========================= ROUTES =========================
+# ---------- HELPERS ----------
+def login_required(f):
+    from functools import wraps
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if 'user_id' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return wrapper
+
+# ---------- ROUTES ----------
 @app.route('/')
 def index():
-    init_db()
-    posts = app.Post.query.order_by(app.Post.timestamp.desc()).all()
-    
-    # Attach username to each post
-    for post in posts:
-        poster = app.User.query.get(post.user_id)
-        post.username = poster.username if poster else "[deleted]"
-
+    # Global feed (latest posts)
+    posts = (
+        Post.query
+        .order_by(Post.timestamp.desc())
+        .limit(50)
+        .all()
+    )
+    # Attach username for template
+    for p in posts:
+        p.username = p.author.username if p.author else "[deleted]"
     return render_template('index.html', posts=posts)
+
+@app.route('/feed/following')
+@login_required
+def feed_following():
+    # Personal feed – only posts from people you follow + your own
+    user = User.query.get(session['user_id'])
+    followed_ids = [f.followed_id for f in user.following]
+    followed_ids.append(user.id)   # include own posts
+    posts = (
+        Post.query
+        .filter(Post.user_id.in_(followed_ids))
+        .order_by(Post.timestamp.desc())
+        .limit(50)
+        .all()
+    )
+    for p in posts:
+        p.username = p.author.username if p.author else "[deleted]"
+    return render_template('feed.html', posts=posts, title="Following")
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    init_db()
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
-        user = app.User.query.filter_by(username=username, password=password).first()
+        user = User.query.filter_by(username=username, password=password).first()
         if user:
-            return jsonify({
-                'success': True,
-                'user_id': user.id,
-                'username': user.username
-            })
+            session['user_id'] = user.id
+            session['username'] = user.username
+            # JSON for AJAX, HTML redirect for normal form
+            if request.is_json:
+                return jsonify({'success': True, 'user_id': user.id, 'username': user.username})
+            return redirect(url_for('index'))
         else:
-            return jsonify({'success': False, 'error': 'Invalid credentials'}), 401
-    
+            if request.is_json:
+                return jsonify({'success': False, 'error': 'Invalid credentials'}), 401
+            flash('Invalid credentials')
     return render_template('login.html')
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
-    init_db()
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
         if not username or not password:
             return jsonify({'success': False, 'error': 'Both fields required'}), 400
-        if app.User.query.filter_by(username=username).first():
+        if User.query.filter_by(username=username).first():
             return jsonify({'success': False, 'error': 'Username taken'}), 400
-        
-        user = app.User(username=username, password=password)
+
+        user = User(username=username, password=password)
         db.session.add(user)
         db.session.commit()
-        
-        return jsonify({
-            'success': True,
-            'user_id': user.id,
-            'username': user.username
-        })
-    
+        session['user_id'] = user.id
+        session['username'] = user.username
+        if request.is_json:
+            return jsonify({'success': True, 'user_id': user.id, 'username': user.username})
+        return redirect(url_for('index'))
     return render_template('register.html')
 
+@app.route('/logout')
+def logout():
+    session.pop('user_id', None)
+    session.pop('username', None)
+    flash('Logged out.')
+    return redirect(url_for('login'))
+
+# ---------- POST ----------
 @app.route('/post', methods=['GET', 'POST'])
+@login_required
 def post():
     if request.method == 'GET':
         return render_template('post.html')
 
-    # Accept both JSON (from JS) and form data (fallback)
+    # Accept both JSON (AJAX) and form data
     if request.is_json:
         data = request.get_json()
-        user_id = data.get('user_id')
         url = data.get('url')
     else:
-        user_id = request.form.get('user_id')
         url = request.form.get('url')
 
-    if not user_id or not url:
-        return jsonify({'error': 'Missing user or URL'}), 400
+    if not url:
+        return jsonify({'error': 'Missing URL'}), 400
 
-    user = app.User.query.get(int(user_id))
-    if not user:
-        return jsonify({'error': 'Invalid user'}), 401
-
-    # Parse URL
     platform, track_data = parse_track_url(url)
     if not track_data:
         return jsonify({'error': 'Unsupported URL'}), 400
 
-    post = app.Post(
-        user_id=user.id,
-        url=url,
+    post = Post(
+        user_id=session['user_id'],
         platform=platform,
+        url=url,
         title=track_data['title'],
         artist=track_data['artist'],
         thumbnail=track_data['thumbnail'],
@@ -168,152 +252,62 @@ def post():
     )
     db.session.add(post)
     db.session.commit()
+    return jsonify({'success': True, 'redirect': url_for('index')})
 
-    return jsonify({'success': True, 'redirect': '/'})
-@app.route('/follow/<int:user_id>')
+# ---------- PROFILE ----------
+@app.route('/profile/<username>')
+def profile(username):
+    user = User.query.filter_by(username=username).first_or_404()
+    # Posts by this user
+    posts = user.posts.order_by(Post.timestamp.desc()).limit(20).all()
+    # Follow stats
+    following = user.following.count()
+    followers = user.followers.count()
+    is_following = False
+    if 'user_id' in session:
+        current = User.query.get(session['user_id'])
+        is_following = current.is_following(user)
+
+    return render_template(
+        'profile.html',
+        profile_user=user,
+        posts=posts,
+        following=following,
+        followers=followers,
+        is_following=is_following
+    )
+
+# ---------- FOLLOW / UNFOLLOW ----------
+@app.route('/follow/<int:user_id>', methods=['POST'])
+@login_required
 def follow(user_id):
-    init_db()  # REQUIRED
-    if 'user_id' not in session or session['user_id'] == user_id:
-        return redirect(url_for('index'))
-    f = app.Follow(follower_id=session['user_id'], followed_id=user_id)
-    db.session.add(f)
+    if user_id == session['user_id']:
+        abort(400, "You cannot follow yourself")
+    target = User.query.get_or_404(user_id)
+    current = User.query.get(session['user_id'])
+    if current.is_following(target):
+        abort(400, "Already following")
+    db.session.add(Follow(follower_id=current.id, followed_id=target.id))
     db.session.commit()
-    return redirect(url_for('index'))
+    return jsonify({'status': 'following'})
 
-@app.route('/logout')
-def logout():
-    session.pop('user_id', None)
-    flash('Logged out.')
-    return redirect(url_for('login'))
+@app.route('/unfollow/<int:user_id>', methods=['POST'])
+@login_required
+def unfollow(user_id):
+    if user_id == session['user_id']:
+        abort(400)
+    target = User.query.get_or_404(user_id)
+    current = User.query.get(session['user_id'])
+    rel = current.following.filter_by(followed_id=target.id).first()
+    if rel:
+        db.session.delete(rel)
+        db.session.commit()
+    return jsonify({'status': 'unfollowed'})
 
-# ========================= RUN APP =========================
+# ---------- RUN ----------
 if __name__ == '__main__':
+    with app.app_context():
+        db.create_all()
+        print("Tables ensured")
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
-# === LAZY DB INITIALIZATION ===
-def init_db():
-    global db
-    if db is None:
-        # === SET DATABASE URI ===
-        db_uri = (
-            os.environ.get('DATABASE_URL', 'sqlite:///earshot.db')
-            .replace('postgres://', 'postgresql+psycopg://', 1)
-            .replace('postgresql://', 'postgresql+psycopg://', 1)  # FORCE psycopg
-            + '?client_encoding=utf8'
-        )
-        app.config['SQLALCHEMY_DATABASE_URI'] = db_uri
-
-        # === BLOCK psycopg2 BEFORE SQLAlchemy ===
-        import sqlalchemy.dialects.postgresql as pg
-        pg.psycopg2 = None
-        # ========================================
-
-        db = SQLAlchemy(app)
-
-        # === MODELS ===
-        class User(db.Model):
-            id = db.Column(db.Integer, primary_key=True)
-            username = db.Column(db.String(80), unique=True, nullable=False)
-            password = db.Column(db.String(120), nullable=False)
-
-        class Follow(db.Model):
-            id = db.Column(db.Integer, primary_key=True)
-            follower_id = db.Column(db.Integer, db.ForeignKey('user.id'))
-            followed_id = db.Column(db.Integer, db.ForeignKey('user.id'))
-
-        class Post(db.Model):
-            id = db.Column(db.Integer, primary_key=True)
-            user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
-            platform = db.Column(db.String(20))
-            url = db.Column(db.String(300))
-            title = db.Column(db.String(200))
-            artist = db.Column(db.String(200))
-            thumbnail = db.Column(db.String(300))
-            embed_url = db.Column(db.String(300))
-            timestamp = db.Column(db.DateTime, default=datetime.utcnow)
-            user = db.relationship('User', backref='posts')
-
-        app.User = User
-        app.Follow = Follow
-        app.Post = Post
-
-    return db
-
-# Initialize DB on every request
-@app.before_request
-def before_request():
-    init_db()
-
-# === CREATE TABLES AT STARTUP (SAFE) ===
-with app.app_context():
-    db_instance = init_db()
-    db_instance.create_all()
-    print("Database initialized and tables created.")
-def parse_track_url(url):
-    url = url.strip()
-    
-    if 'spotify.com' in url:
-        embed = url.replace('open.spotify.com', 'open.spotify.com/embed')
-        return 'spotify', {
-            'title': 'Spotify Track',
-            'artist': 'Artist',
-            'thumbnail': '',
-            'embed_url': embed
-        }
-    elif 'youtube.com' in url or 'youtu.be' in url or 'music.youtube.com' in url:
-        video_id = ''
-        if 'v=' in url:
-            video_id = url.split('v=')[1].split('&')[0]
-        elif 'youtu.be/' in url:
-            video_id = url.split('youtu.be/')[1].split('?')[0]
-        elif 'music.youtube.com' in url:
-            if 'watch?v=' in url:
-                video_id = url.split('watch?v=')[1].split('&')[0]
-        
-        if not video_id:
-            return None, None
-            
-        embed = f"https://www.youtube.com/embed/{video_id}"
-        return 'youtube', {
-            'title': 'YouTube Video',
-            'artist': 'Creator',
-            'thumbnail': f"https://img.youtube.com/vi/{video_id}/0.jpg",
-            'embed_url': embed
-        }
-    elif 'music.apple.com' in url:
-        return 'apple', {
-            'title': 'Apple Music Track',
-            'artist': 'Artist',
-            'thumbnail': '',
-            'embed_url': url
-        }
-    
-    return None, None
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
