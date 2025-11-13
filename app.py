@@ -133,48 +133,38 @@ def register():
 
 @app.route('/post', methods=['GET', 'POST'])
 def post():
-    # GET: Show form
     if request.method == 'GET':
         return render_template('post.html')
 
-    # POST: Handle track share
-    url = request.form.get('url')
-    if not url:
-        flash('URL required', 'error')
-        return redirect('/post')
-
-    # Get current user from localStorage (via JS later)
-    # For now, we'll let JS send user_id
-    # But we need to accept it from JSON
+    # Accept both JSON (from JS) and form data (fallback)
     if request.is_json:
         data = request.get_json()
         user_id = data.get('user_id')
         url = data.get('url')
     else:
-        # Fallback: check if JS sent it
         user_id = request.form.get('user_id')
+        url = request.form.get('url')
 
-    if not user_id:
-        return jsonify({'error': 'Not logged in'}), 401
+    if not user_id or not url:
+        return jsonify({'error': 'Missing user or URL'}), 400
 
-    user = app.User.query.get(user_id)
+    user = app.User.query.get(int(user_id))
     if not user:
         return jsonify({'error': 'Invalid user'}), 401
 
-    # Parse URL and save post
-    platform, data = parse_track_url(url)
-    if not data:
-        flash('Unsupported URL', 'error')
-        return redirect('/post')
+    # Parse URL
+    platform, track_data = parse_track_url(url)
+    if not track_data:
+        return jsonify({'error': 'Unsupported URL'}), 400
 
     post = app.Post(
         user_id=user.id,
         url=url,
         platform=platform,
-        title=data['title'],
-        artist=data['artist'],
-        thumbnail=data['thumbnail'],
-        embed_url=data['embed_url']
+        title=track_data['title'],
+        artist=track_data['artist'],
+        thumbnail=track_data['thumbnail'],
+        embed_url=track_data['embed_url']
     )
     db.session.add(post)
     db.session.commit()
@@ -259,6 +249,29 @@ with app.app_context():
     db_instance = init_db()
     db_instance.create_all()
     print("Database initialized and tables created.")
+def parse_track_url(url):
+    if 'spotify.com' in url:
+        return 'spotify', {
+            'title': 'Spotify Track',
+            'artist': 'Artist',
+            'thumbnail': '',
+            'embed_url': url.replace('open.spotify.com', 'open.spotify.com/embed')
+        }
+    elif 'youtube.com' in url or 'youtu.be' in url:
+        return 'youtube', {
+            'title': 'YouTube Video',
+            'artist': 'Creator',
+            'thumbnail': '',
+            'embed_url': url.replace('watch?v=', 'embed/')
+        }
+    elif 'music.apple.com' in url:
+        return 'apple', {
+            'title': 'Apple Music Track',
+            'artist': 'Artist',
+            'thumbnail': '',
+            'embed_url': url
+        }
+    return None, None
 
 
 
