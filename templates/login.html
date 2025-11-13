@@ -1,33 +1,10 @@
-{% extends "base.html" %}
-{% block title %}Log In{% endblock %}
-
+{% extends "layout.html" %}
+{% block title %}{{ 'Login' if request.path == '/login' else 'Register' }}{% endblock %}
 {% block content %}
-  <h2>Log In</h2>
-  <form id="login-form">
-    <input type="text" name="username" placeholder="Username" required autofocus>
-    <input type="password" name="password" placeholder="Password" required>
-    <button type="submit">Log In</button>
-  </form>
-  <p>No account? <a href="/register">Register here</a></p>
-
-  <script>
-    document.getElementById('login-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const formData = new FormData(e.target);
-      const res = await fetch('/login', {
-        method: 'POST',
-        body: formData
-      });
-      const data = await res.json();
-      if (data.success) {
-        localStorage.setItem('earshot_user', JSON.stringify({
-          id: data.user_id,
-          username: data.username
-        }));
-        window.location.href = '/';
-      } else {
-        alert(data.error || 'Login failed');
-      }
-    });
-  </script>
+<h2>{{ 'Login' if request.path == '/login' else 'Register' }}</h2>
+<form method="post">
+  <input name="username" placeholder="Username" required><br>
+  <input name="password" type="password" placeholder="Password" required><br>
+  <button type="submit">{{ 'Login' if request.path == '/login' else 'Register' }}</button>
+</form>
 {% endblock %}
