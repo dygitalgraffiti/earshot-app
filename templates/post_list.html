@@ -35,3 +35,18 @@
 {% else %}
 <p>No posts yet.</p>
 {% endfor %}
+<script>
+async function deletePost(id) {
+  if (confirm('Delete this post?')) {
+    const res = await fetch(`/delete/${id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    if (res.ok) {
+      location.reload();
+    } else {
+      alert('Failed to delete');
+    }
+  }
+}
+</script>
