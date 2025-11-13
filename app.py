@@ -247,35 +247,32 @@ def logout():
 @app.route('/post', methods=['GET', 'POST'])
 @login_required
 def post():
-    if request.method == 'GET':
-        return render_template('post.html')
+    if request.method == 'POST':
+        url = request.form['url'].strip()
+        if not url:
+            flash('URL required')
+            return redirect(url_for('post'))
 
-    # Accept both JSON (AJAX) and form data
-    if request.is_json:
-        data = request.get_json()
-        url = data.get('url')
-    else:
-        url = request.form.get('url')
+        info = parse_url(url)
+        if not info:
+            flash('Unsupported or invalid URL')
+            return redirect(url_for('post'))
 
-    if not url:
-        return jsonify({'error': 'Missing URL'}), 400
+        new_post = Post(
+            user_id=session['user_id'],
+            url=url,
+            title=info['title'],
+            artist=info.get('artist'),
+            thumbnail=info['thumbnail'],
+            embed_url=info['embed_url'],
+            platform=info['platform']
+        )
+        db.session.add(new_post)
+        db.session.commit()
+        flash('Posted!')
+        return redirect(url_for('index'))
 
-    platform, track_data = parse_track_url(url)
-    if not track_data:
-        return jsonify({'error': 'Unsupported URL'}), 400
-
-    post = Post(
-        user_id=session['user_id'],
-        platform=platform,
-        url=url,
-        title=track_data['title'],
-        artist=track_data['artist'],
-        thumbnail=track_data['thumbnail'],
-        embed_url=track_data['embed_url']
-    )
-    db.session.add(post)
-    db.session.commit()
-    return jsonify({'success': True, 'redirect': url_for('index')})
+    return render_template('post_form.html'
 
 # ---------- PROFILE ----------
 @app.route('/profile/<username>')
@@ -344,6 +341,7 @@ if __name__ == '__main__':
         print("Tables ensured")
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
+
 
 
 
