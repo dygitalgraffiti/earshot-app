@@ -4,11 +4,17 @@
     <div class="album-art">
       <img src="{{ p.thumbnail or '/static/placeholder.png' }}" alt="{{ p.title }}">
       <div class="thumb-overlay">
-  <a href="{{ url_for('profile', username=p.username) }}" class="overlay-user" onclick="event.stopPropagation();">
-    {{ p.username }}
-  </a>
-  <span class="overlay-time">{{ p.timestamp.strftime('%b %d %I:%M %p').lstrip('0') }}</span>
-</div>
+        <a href="{{ url_for('profile', username=p.username) }}" 
+           class="overlay-user" 
+           onclick="event.stopPropagation();">
+          {{ p.username }}
+        </a>
+        <span class="overlay-time" 
+              data-utc="{{ p.timestamp.isoformat() }}">
+          {{ p.timestamp.strftime('%b %d %I:%M %p').lstrip('0') }}
+        </span>
+      </div>
+    </div>
 
     <div class="card-info">
       <div class="title">{{ p.title }}</div>
@@ -27,23 +33,15 @@
 
   {% if p.is_mine %}
     <div class="post-actions">
+      <a href="{{ url_for('edit_post', post_id=p.id) }}" class="edit-btn">Edit</a>
       <button onclick="deletePost({{ p.id }})" class="delete-btn">Delete</button>
     </div>
   {% endif %}
 </div>
-  </a>
-
-<div class="post-header">
-{% if p.is_mine %}
-  <div class="post-actions">
-    <button onclick="deletePost({{ p.id }})" class="delete-btn">Delete</button>
-  </div>
-{% endif %}
-  </div>
-</div>
 {% else %}
 <p>No posts yet.</p>
 {% endfor %}
+
 <script>
 async function deletePost(id) {
   if (confirm('Delete this post?')) {
@@ -58,4 +56,23 @@ async function deletePost(id) {
     }
   }
 }
+
+// Convert UTC → Local Time
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.overlay-time').forEach(el => {
+    const utcISO = el.getAttribute('data-utc');
+    if (utcISO) {
+      const date = new Date(utcISO);
+      const local = date.toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+      });
+      el.textContent = local.replace(/,/, '');
+    }
+  });
+});
 </script>
+
