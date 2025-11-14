@@ -243,23 +243,7 @@ def login_required(f):
     return wrapper
 
 # ---------- ROUTES ----------
-@app.route('/api/ytdl')
-def ytdl():
-    url = request.args.get('url')
-    if not url:
-        return jsonify({'error': 'No URL'}), 400
-    try:
-        ydl_opts = {
-            'format': 'bestaudio',
-            'quiet': True,
-            'no_warnings': True,
-        }
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            audio_url = info['url']
-            return jsonify({'audioUrl': audio_url})
-    except:
-        return jsonify({'error': 'Failed to extract'}), 500
+
 @app.route('/')
 def index():
     posts = (
