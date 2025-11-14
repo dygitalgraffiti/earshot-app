@@ -551,7 +551,36 @@ def ytdl():
         print("YTDL ERROR:", e)
         return jsonify({'error': str(e)}), 500
 
+import requests
+from flask import Response, stream_with_context
 
+@app.route('/api/audio')
+def audio_proxy():
+    url = request.args.get('url')
+    if not url:
+        return "No URL", 400
+
+    try:
+        # Stream from YouTube
+        response = requests.get(url, stream=True, timeout=10)
+        response.raise_for_status()
+
+        def generate():
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    yield chunk
+
+        return Response(
+            stream_with_context(generate()),
+            content_type=response.headers.get('Content-Type', 'audio/webm'),
+            headers={
+                'Accept-Ranges': 'bytes',
+                'Cache-Control': 'no-cache',
+            }
+        )
+    except Exception as e:
+        print("PROXY ERROR:", e)
+        return str(e), 500
 
 
 
