@@ -14,7 +14,9 @@ from sqlalchemy import UniqueConstraint
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'earshot-secret-key-2025')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
+# JWT Setup (for mobile app)
+app.config['JWT_SECRET_KEY'] = 'earshot-mobile-secret-2025'
+jwt = JWTManager(app)
 # ---------- DATABASE ----------
 db_uri = (
     os.environ.get('DATABASE_URL', 'sqlite:///earshot.db')
@@ -516,6 +518,7 @@ if __name__ == '__main__':
         print("Tables ensured")
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
+
 
 
 
