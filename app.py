@@ -535,14 +535,16 @@ def ytdl():
         return jsonify({'error': 'No URL'}), 400
     try:
         ydl_opts = {
-            'format': 'bestaudio',
+            'format': 'bestaudio[ext=mp3]/best[ext=mp4]/best',
             'quiet': True,
             'no_warnings': True,
             'noplaylist': True,
+            'extract_flat': False,
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
-            audio_url = info['url']
+            # Try to get direct MP3/MP4 URL
+            audio_url = info.get('url') or info['formats'][-1]['url']
             return jsonify({'audioUrl': audio_url})
     except Exception as e:
         print("YTDL ERROR:", e)
