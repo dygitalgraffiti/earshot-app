@@ -536,26 +536,16 @@ def ytdl():
 
     try:
         ydl_opts = {
-            'format': 'bestaudio[ext=mp3]/best[ext=mp4]/best',
+            'format': 'bestaudio/best',
             'quiet': True,
             'no_warnings': True,
             'noplaylist': True,
-            'extract_flat': False,
-            'force_generic_extractor': False,
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
-
-            # Find direct audio URL (not .m3u8)
-            for f in reversed(info.get('formats', [])):
-                if f.get('ext') in ['mp3', 'm4a', 'webm', 'mp4'] and f.get('acodec') != 'none':
-                    audio_url = f['url']
-                    if not audio_url.endswith('.m3u8'):
-                        return jsonify({'audioUrl': audio_url})
-
-            # Fallback
-            return jsonify({'audioUrl': info['url']})
+            audio_url = info['url']  # This is a direct stream (m4a/webm)
+            return jsonify({'audioUrl': audio_url})
 
     except Exception as e:
         print("YTDL ERROR:", e)
