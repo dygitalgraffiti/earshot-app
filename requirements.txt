@@ -1,6 +1,6 @@
-Flask==3.0.3
+FFlask==3.0.3
 gunicorn==22.0.0
-psycopg[binary]==3.2.1
+psycopg==3.2.3
 PyJWT==2.8.0
 yt-dlp==2024.8.6
 Flask-Cors==4.0.1
