@@ -10,8 +10,10 @@ from flask import (
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import UniqueConstraint
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app, origins=["*"])
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'earshot-secret-key-2025')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 # JWT Setup (for mobile app)
@@ -518,6 +520,7 @@ if __name__ == '__main__':
         print("Tables ensured")
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
+
 
 
 
