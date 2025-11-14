@@ -7,6 +7,7 @@ from flask import (
     Flask, render_template, request, session, redirect,
     url_for, flash, jsonify, abort
 )
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import UniqueConstraint
 
@@ -408,6 +409,95 @@ def unfollow(user_id):
         db.session.delete(rel)
         db.session.commit()
     return jsonify({'status': 'unfollowed'})
+    # ============== MOBILE API (START) ==============
+
+@app.route('/api/login', methods=['POST'])
+def api_login():
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data'}), 400
+    
+    username = data.get('username')
+    password = data.get('password')
+    user = User.query.filter_by(username=username, password=password).first()
+    
+    if user:
+        token = create_access_token(identity=user.id)
+        return jsonify({
+            'success': True,
+            'token': token,
+            'user': {
+                'id': user.id,
+                'username': user.username
+            }
+        })
+    else:
+        return jsonify({'error': 'Invalid username or password'}), 401
+
+
+@app.route('/api/feed', methods=['GET'])
+@jwt_required()
+def api_feed():
+    current_user_id = get_jwt_identity()
+    
+    posts = Post.query.order_by(Post.timestamp.desc()).limit(50).all()
+    feed = []
+    
+    for p in posts:
+        feed.append({
+            'id': p.id,
+            'username': p.author.username if p.author else '[deleted]',
+            'title': p.title,
+            'artist': p.artist,
+            'platform': p.platform,
+            'url': p.url,
+            'thumbnail': p.thumbnail,
+            'embed_url': p.embed_url,
+            'timestamp': p.timestamp.isoformat(),
+            'is_mine': p.user_id == current_user_id
+        })
+    
+    return jsonify(feed)
+
+
+@app.route('/api/post', methods=['POST'])
+@jwt_required()
+def api_post():
+    current_user_id = get_jwt_identity()
+    data = request.get_json()
+    url = data.get('url')
+    
+    if not url:
+        return jsonify({'error': 'URL required'}), 400
+    
+    platform, info = parse_track_url(url)
+    if not info:
+        return jsonify({'error': 'Invalid or unsupported URL'}), 400
+    
+    new_post = Post(
+        user_id=current_user_id,
+        url=url,
+        title=info['title'],
+        artist=info.get('artist'),
+        thumbnail=info['thumbnail'],
+        embed_url=info['embed_url'],
+        platform=platform
+    )
+    db.session.add(new_post)
+    db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'post': {
+            'id': new_post.id,
+            'username': User.query.get(current_user_id).username,
+            'title': new_post.title,
+            'artist': new_post.artist,
+            'platform': new_post.platform
+        }
+    })
+
+# ============== MOBILE API (END) ==============
 # -------------- DELETE --------------
 @app.route('/delete/<int:post_id>', methods=['POST'])
 @login_required
@@ -426,6 +516,7 @@ if __name__ == '__main__':
         print("Tables ensured")
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
+
 
 
 
