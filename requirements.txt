@@ -1,4 +1,4 @@
-FFlask==3.0.3
+Flask==3.0.3
 gunicorn==22.0.0
 psycopg==3.2.3
 PyJWT==2.8.0
