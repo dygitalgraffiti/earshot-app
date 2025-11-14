@@ -424,7 +424,7 @@ def api_login():
     user = User.query.filter_by(username=username, password=password).first()
     
     if user:
-        token = create_access_token(identity=user.id)
+        token = create_access_token(identity=str(user.id))
         return jsonify({
             'success': True,
             'token': token,
@@ -518,6 +518,7 @@ if __name__ == '__main__':
         print("Tables ensured")
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
+
 
 
 
