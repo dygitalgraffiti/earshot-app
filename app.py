@@ -1,6 +1,7 @@
 # app.py
 import os
 import re
+import yt_dlp
 import requests
 from datetime import datetime
 from flask import (
@@ -242,6 +243,23 @@ def login_required(f):
     return wrapper
 
 # ---------- ROUTES ----------
+@app.route('/api/ytdl')
+def ytdl():
+    url = request.args.get('url')
+    if not url:
+        return jsonify({'error': 'No URL'}), 400
+    try:
+        ydl_opts = {
+            'format': 'bestaudio',
+            'quiet': True,
+            'no_warnings': True,
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            audio_url = info['url']
+            return jsonify({'audioUrl': audio_url})
+    except:
+        return jsonify({'error': 'Failed to extract'}), 500
 @app.route('/')
 def index():
     posts = (
@@ -269,6 +287,7 @@ def edit_post(post_id):
         return redirect(url_for('index'))
 
     return render_template('edit_post.html', post=post)
+
 @app.route('/feed/following')
 @login_required
 def feed_following():
@@ -502,6 +521,7 @@ def api_post():
     })
 
 # ============== MOBILE API (END) ==============
+
 # -------------- DELETE --------------
 @app.route('/delete/<int:post_id>', methods=['POST'])
 @login_required
@@ -521,7 +541,28 @@ if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
 
+import yt_dlp
+from flask import jsonify, request
 
+@app.route('/api/ytdl')
+def ytdl():
+    url = request.args.get('url')
+    if not url:
+        return jsonify({'error': 'No URL'}), 400
+    try:
+        ydl_opts = {
+            'format': 'bestaudio',
+            'quiet': True,
+            'no_warnings': True,
+            'noplaylist': True,
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            audio_url = info['url']
+            return jsonify({'audioUrl': audio_url})
+    except Exception as e:
+        print("YTDL ERROR:", e)
+        return jsonify({'error': 'Failed to extract audio'}), 500
 
 
 
