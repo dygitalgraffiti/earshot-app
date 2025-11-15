@@ -109,7 +109,7 @@ export default function HomeScreen() {
     setFlipped(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const playSong = async (post: Post) => {
+    const playSong = async (post: Post) => {
     if (playingId === post.id) {
       await sound?.pauseAsync();
       setPlayingId(null);
@@ -118,7 +118,13 @@ export default function HomeScreen() {
 
     setLoading(true);
     try {
-      if (sound) await sound.unloadAsync();
+      if (sound) {
+        try {
+          await sound.unloadAsync();
+        } catch (e) {
+          console.warn('Unload failed:', e);
+        }
+      }
 
       const res = await fetch(`${API_URL}/api/ytdl?url=${encodeURIComponent(post.url)}`);
       const data = await res.json();
@@ -151,10 +157,6 @@ export default function HomeScreen() {
       setLoading(false);
     }
   };
-      // Stop previous
-      if (sound) {
-        await sound.unloadAsync();
-      }
 
       // Try to extract audio URL
       let audioUrl = post.url;
