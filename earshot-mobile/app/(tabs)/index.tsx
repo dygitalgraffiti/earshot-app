@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { Audio } from 'expo-av';
 import {
   Text,
   View,
@@ -14,7 +13,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { MotiView, AnimatePresence } from 'moti';
-import { Audio } from 'expo-av';
+import { Audio } from 'expo-av'; // ← ONLY THIS ONE
 import * as Linking from 'expo-linking';
 
 const { width } = Dimensions.get('window');
