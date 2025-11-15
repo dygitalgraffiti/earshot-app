@@ -540,15 +540,21 @@ def ytdl():
             'quiet': True,
             'no_warnings': True,
             'noplaylist': True,
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Referer': 'https://www.youtube.com/',
+                'Origin': 'https://www.youtube.com',
+            },
+            'cookiefile': 'cookies.txt',  # Optional: if you have cookies
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
-            audio_url = info['url']  # This is a direct stream (m4a/webm)
+            audio_url = info['url']
             return jsonify({'audioUrl': audio_url})
 
     except Exception as e:
-        print("YTDL ERROR:", e)
+        print("YTDL ERROR:", str(e))
         return jsonify({'error': str(e)}), 500
 
 import requests
