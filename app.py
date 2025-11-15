@@ -535,42 +535,42 @@ def ytdl():
         return jsonify({'error': 'No URL'}), 400
 
     try:
-        # Full Chrome headers
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'en-us,en;q=0.5',
-            'Accept-Encoding': 'gzip,deflate',
-            'Accept-Charset': 'ISO-8859-1,utf-8;q=0.7,*;q=0.7',
-            'Referer': 'https://www.youtube.com/',
-            'Origin': 'https://www.youtube.com',
-        }
+        # Extract YouTube ID
+        yt_id = extract_youtube_id(url)
+        if not yt_id:
+            return jsonify({'error': 'Invalid YouTube URL'}), 400
 
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'quiet': True,
-            'no_warnings': True,
-            'noplaylist': True,
-            'http_headers': headers,
-            'cookiefile': 'cookies.txt',  # Optional: if you have real cookies
-            'extractor_args': {
-                'youtube': {
-                    'skip': ['hls', 'dash'],
-                }
-            }
-        }
+        # Use Piped to get direct audio
+        piped_api = f"https://pipedapi.kavin.rocks/streams/{yt_id}"
+        resp = requests.get(piped_api, timeout=10)
+        data = resp.json()
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            if not info or 'url' not in info:
-                return jsonify({'error': 'No audio stream found'}), 404
-            return jsonify({'audioUrl': info['url']})
+        # Find best audio stream
+        audio_streams = data.get('audioStreams', [])
+        if not audio_streams:
+            return jsonify({'error': 'No audio stream found'}), 404
+
+        # Prefer m4a or webm
+        stream = next((s for s in audio_streams if s['codec'] in ['m4a', 'webm', 'opus']), audio_streams[0])
+        direct_url = stream['url']
+
+        return jsonify({'audioUrl': direct_url})
 
     except Exception as e:
-        error_msg = str(e)
-        if 'Sign in to confirm' in error_msg:
-            return jsonify({'error': 'YouTube blocked this video. Try a different one.'}), 403
-        return jsonify({'error': error_msg}), 500
+        print("PIPED ERROR:", str(e))
+        return jsonify({'error': 'Failed to get audio stream'}), 500
+
+
+def extract_youtube_id(url):
+    patterns = [
+        r'(?:youtube\.com/watch\?v=|youtu\.be/)([^&\n?#]+)',
+        r'youtube\.com/embed/([^&\n?#]+)',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, url)
+        if match:
+            return match.group(1)
+    return None
 import requests
 from flask import Response, stream_with_context
 
