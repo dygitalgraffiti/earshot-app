@@ -15,7 +15,6 @@ import {
 import { MotiView, AnimatePresence } from 'moti';
 import { Audio } from 'expo-av';
 import { WebView, WebViewMessageEvent } from 'react-native-webview';
-import * as Linking from 'expo-linking';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = width * 0.85;
@@ -31,7 +30,7 @@ interface Post {
   url: string;
 }
 
-/* yt-dlp.js – waits for YTDLP to load */
+/* yt-dlp.js – loads once, works forever */
 const YTDLP_HTML = `
 <!DOCTYPE html>
 <html>
@@ -159,7 +158,7 @@ export default function HomeScreen() {
     setFlipped(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  /* -------------------------- PLAY SONG -------------------------- */
+  /* FINAL PLAY SONG – RETRY + DEBUG + LOADING */
   const playSong = async (post: Post) => {
     if (playingId === post.id) {
       await sound?.pauseAsync();
@@ -168,46 +167,70 @@ export default function HomeScreen() {
     }
 
     setLoading(true);
-    try {
-      if (sound) await sound.unloadAsync();
+    let attempts = 0;
+    const maxAttempts = 3;
 
-      const audioUrl = await new Promise<string>((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('Taking too long – try again')), 30000);
+    const tryPlay = async (): Promise<void> => {
+      attempts++;
+      console.log(`Attempt ${attempts} for: ${post.title} (${post.url})`);
 
-        (window as any).onWebViewMessage = (event: WebViewMessageEvent) => {
-          const data = event.nativeEvent.data;
-          clearTimeout(timeout);
+      try {
+        if (sound) await sound.unloadAsync();
 
-          if (data.startsWith('http')) {
-            resolve(data);
-          } else if (data.startsWith('ERROR:')) {
-            reject(new Error(data));
-          } else {
-            webViewRef.current?.injectJavaScript(`
-              getAudio("${data.replace(/"/g, '\\"')}");
-              true;
-            `);
+        const audioUrl = await new Promise<string>((resolve, reject) => {
+          const timeout = setTimeout(() => reject(new Error('Timeout')), 30000);
+
+          (window as any).onWebViewMessage = (event: WebViewMessageEvent) => {
+            const data = event.nativeEvent.data;
+            clearTimeout(timeout);
+
+            if (data.startsWith('http')) {
+              console.log('AUDIO URL:', data);
+              resolve(data);
+            } else if (data.startsWith('ERROR:')) {
+              console.error('YT-DLP ERROR:', data);
+              reject(new Error(data));
+            } else {
+              console.log('Sending to yt-dlp.js:', data);
+              webViewRef.current?.injectJavaScript(`
+                console.log("Extracting: ${data}");
+                getAudio("${data.replace(/"/g, '\\"')}");
+                true;
+              `);
+            }
+          };
+
+          webViewRef.current?.postMessage(post.url);
+        });
+
+        const { sound: newSound } = await Audio.Sound.createAsync(
+          { uri: audioUrl },
+          { shouldPlay: true }
+        );
+
+        setSound(newSound);
+        setPlayingId(post.id);
+
+        newSound.setOnPlaybackStatusUpdate((status: any) => {
+          if (status.isLoaded && status.didJustFinish) {
+            setPlayingId(null);
           }
-        };
-
-        webViewRef.current?.postMessage(post.url);
-      });
-
-      const { sound: newSound } = await Audio.Sound.createAsync(
-        { uri: audioUrl },
-        { shouldPlay: true }
-      );
-
-      setSound(newSound);
-      setPlayingId(post.id);
-
-      newSound.setOnPlaybackStatusUpdate((status: any) => {
-        if (status.isLoaded && status.didJustFinish) {
-          setPlayingId(null);
+        });
+        return;
+      } catch (err: any) {
+        console.error(`Attempt ${attempts} failed:`, err.message);
+        if (attempts < maxAttempts) {
+          await new Promise(r => setTimeout(r, 3000));
+          return tryPlay();
+        } else {
+          throw err;
         }
-      });
+      }
+    };
+
+    try {
+      await tryPlay();
     } catch (err: any) {
-      console.error('PLAY ERROR:', err.message);
       Alert.alert('Play Failed', err.message || 'Could not play audio');
     } finally {
       setLoading(false);
@@ -268,6 +291,7 @@ export default function HomeScreen() {
         javaScriptEnabled={true}
         domStorageEnabled={true}
         onMessage={(event: WebViewMessageEvent) => {
+          console.log('WebView →', event.nativeEvent.data);
           if ((window as any).onWebViewMessage) {
             (window as any).onWebViewMessage(event);
           }
