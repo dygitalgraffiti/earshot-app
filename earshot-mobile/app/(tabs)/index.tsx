@@ -31,10 +31,7 @@ interface Post {
   url: string;
 }
 
-/* -------------------------------------------------------------
-   yt‑dlp.js loaded in a hidden WebView – waits for the global
-   YTDLP object before processing any URL.
-   ------------------------------------------------------------- */
+/* yt-dlp.js – waits for YTDLP to load */
 const YTDLP_HTML = `
 <!DOCTYPE html>
 <html>
@@ -72,7 +69,6 @@ async function getAudio(url) {
   }
 }
 
-/* Poll until the library exposes the global YTDLP */
 const check = setInterval(() => {
   if (typeof YTDLP !== 'undefined') {
     clearInterval(check);
@@ -96,16 +92,12 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(false);
   const webViewRef = useRef<WebView>(null);
 
-  /* -------------------------------------------------------------
-     Cleanup the current sound when the component unmounts
-     ------------------------------------------------------------- */
   useEffect(() => {
     return () => {
       sound?.unloadAsync();
     };
   }, [sound]);
 
-  /* -------------------------- AUTH -------------------------- */
   const login = async () => {
     if (!username || !password) {
       Alert.alert('Missing', 'Please fill in both fields');
@@ -167,7 +159,7 @@ export default function HomeScreen() {
     setFlipped(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  /* -------------------------- PLAY -------------------------- */
+  /* -------------------------- PLAY SONG -------------------------- */
   const playSong = async (post: Post) => {
     if (playingId === post.id) {
       await sound?.pauseAsync();
@@ -180,20 +172,17 @@ export default function HomeScreen() {
       if (sound) await sound.unloadAsync();
 
       const audioUrl = await new Promise<string>((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('Timeout')), 15000);
+        const timeout = setTimeout(() => reject(new Error('Taking too long – try again')), 30000);
 
-        // This handler receives every postMessage from the WebView
         (window as any).onWebViewMessage = (event: WebViewMessageEvent) => {
           const data = event.nativeEvent.data;
           clearTimeout(timeout);
 
           if (data.startsWith('http')) {
-            // Direct audio stream
             resolve(data);
           } else if (data.startsWith('ERROR:')) {
             reject(new Error(data));
           } else {
-            // First message = the YouTube URL we sent
             webViewRef.current?.injectJavaScript(`
               getAudio("${data.replace(/"/g, '\\"')}");
               true;
@@ -201,7 +190,6 @@ export default function HomeScreen() {
           }
         };
 
-        // Kick‑off: send the YouTube URL to the hidden WebView
         webViewRef.current?.postMessage(post.url);
       });
 
@@ -226,7 +214,6 @@ export default function HomeScreen() {
     }
   };
 
-  /* -------------------------- UI -------------------------- */
   if (!token) {
     return (
       <SafeAreaView style={styles.container}>
@@ -274,7 +261,6 @@ export default function HomeScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Hidden WebView that runs yt‑dlp.js */}
       <WebView
         ref={webViewRef}
         source={{ html: YTDLP_HTML }}
@@ -329,7 +315,10 @@ export default function HomeScreen() {
                         disabled={loading}
                       >
                         {loading && playingId === item.id ? (
-                          <ActivityIndicator color="#fff" />
+                          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                            <ActivityIndicator color="#fff" />
+                            <Text style={[styles.playText, { marginLeft: 8 }]}>Loading...</Text>
+                          </View>
                         ) : (
                           <Text style={styles.playText}>
                             {playingId === item.id ? 'Pause' : 'Play'}
@@ -348,9 +337,6 @@ export default function HomeScreen() {
   );
 }
 
-/* -------------------------------------------------------------
-   All of your original styles – unchanged
-   ------------------------------------------------------------- */
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   loginBox: {
