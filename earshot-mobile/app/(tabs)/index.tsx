@@ -109,7 +109,7 @@ export default function HomeScreen() {
     setFlipped(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-    const playSong = async (post: Post) => {
+     const playSong = async (post: Post) => {
     if (playingId === post.id) {
       await sound?.pauseAsync();
       setPlayingId(null);
@@ -118,6 +118,7 @@ export default function HomeScreen() {
 
     setLoading(true);
     try {
+      // Unload previous sound
       if (sound) {
         try {
           await sound.unloadAsync();
@@ -126,6 +127,7 @@ export default function HomeScreen() {
         }
       }
 
+      // Get direct audio URL from backend
       const res = await fetch(`${API_URL}/api/ytdl?url=${encodeURIComponent(post.url)}`);
       const data = await res.json();
       if (data.error) throw new Error(data.error);
