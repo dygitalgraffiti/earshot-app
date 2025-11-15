@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { MotiView, AnimatePresence } from 'moti';
 import { Audio } from 'expo-av';
-import { WebView } from 'react-native-webview';
+import { WebView, WebViewMessageEvent } from 'react-native-webview';
 import * as Linking from 'expo-linking';
 
 const { width } = Dimensions.get('window');
@@ -31,7 +31,10 @@ interface Post {
   url: string;
 }
 
-// yt-dlp.js in hidden WebView
+/* -------------------------------------------------------------
+   yt‑dlp.js loaded in a hidden WebView – waits for the global
+   YTDLP object before processing any URL.
+   ------------------------------------------------------------- */
 const YTDLP_HTML = `
 <!DOCTYPE html>
 <html>
@@ -41,7 +44,22 @@ const YTDLP_HTML = `
 </head>
 <body>
 <script>
+let ytdlpReady = false;
+let pendingUrl = null;
+
+function onYTDLPReady() {
+  ytdlpReady = true;
+  if (pendingUrl) {
+    getAudio(pendingUrl);
+    pendingUrl = null;
+  }
+}
+
 async function getAudio(url) {
+  if (!ytdlpReady) {
+    pendingUrl = url;
+    return;
+  }
   try {
     const ytdlp = new YTDLP();
     const info = await ytdlp.getInfo(url);
@@ -53,6 +71,14 @@ async function getAudio(url) {
     window.ReactNativeWebView.postMessage("ERROR: " + e.message);
   }
 }
+
+/* Poll until the library exposes the global YTDLP */
+const check = setInterval(() => {
+  if (typeof YTDLP !== 'undefined') {
+    clearInterval(check);
+    onYTDLPReady();
+  }
+}, 50);
 </script>
 </body>
 </html>
@@ -68,16 +94,18 @@ export default function HomeScreen() {
   const [sound, setSound] = useState<Audio.Sound | null>(null);
   const [playingId, setPlayingId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
-  const [currentAudioUrl, setCurrentAudioUrl] = useState<string | null>(null);
-  const webViewRef = useRef<any>(null);
+  const webViewRef = useRef<WebView>(null);
 
-  // Cleanup sound
+  /* -------------------------------------------------------------
+     Cleanup the current sound when the component unmounts
+     ------------------------------------------------------------- */
   useEffect(() => {
     return () => {
       sound?.unloadAsync();
     };
   }, [sound]);
 
+  /* -------------------------- AUTH -------------------------- */
   const login = async () => {
     if (!username || !password) {
       Alert.alert('Missing', 'Please fill in both fields');
@@ -139,6 +167,7 @@ export default function HomeScreen() {
     setFlipped(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
+  /* -------------------------- PLAY -------------------------- */
   const playSong = async (post: Post) => {
     if (playingId === post.id) {
       await sound?.pauseAsync();
@@ -150,27 +179,30 @@ export default function HomeScreen() {
     try {
       if (sound) await sound.unloadAsync();
 
-      // Trigger WebView to extract audio URL
-      setCurrentAudioUrl(null);
-      webViewRef.current?.injectJavaScript(`
-        getAudio("${post.url.replace(/"/g, '\\"')}");
-        true;
-      `);
-
-      // Wait for audio URL from WebView
       const audioUrl = await new Promise<string>((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('Timeout')), 10000);
-        const handler = (event: any) => {
-          const msg = event.nativeEvent.data;
+        const timeout = setTimeout(() => reject(new Error('Timeout')), 15000);
+
+        // This handler receives every postMessage from the WebView
+        (window as any).onWebViewMessage = (event: WebViewMessageEvent) => {
+          const data = event.nativeEvent.data;
           clearTimeout(timeout);
-          if (msg.startsWith('http')) {
-            resolve(msg);
+
+          if (data.startsWith('http')) {
+            // Direct audio stream
+            resolve(data);
+          } else if (data.startsWith('ERROR:')) {
+            reject(new Error(data));
           } else {
-            reject(new Error(msg));
+            // First message = the YouTube URL we sent
+            webViewRef.current?.injectJavaScript(`
+              getAudio("${data.replace(/"/g, '\\"')}");
+              true;
+            `);
           }
         };
-        // We'll attach this in render
-        (window as any).onWebViewMessage = handler;
+
+        // Kick‑off: send the YouTube URL to the hidden WebView
+        webViewRef.current?.postMessage(post.url);
       });
 
       const { sound: newSound } = await Audio.Sound.createAsync(
@@ -180,7 +212,6 @@ export default function HomeScreen() {
 
       setSound(newSound);
       setPlayingId(post.id);
-      setCurrentAudioUrl(audioUrl);
 
       newSound.setOnPlaybackStatusUpdate((status: any) => {
         if (status.isLoaded && status.didJustFinish) {
@@ -195,6 +226,7 @@ export default function HomeScreen() {
     }
   };
 
+  /* -------------------------- UI -------------------------- */
   if (!token) {
     return (
       <SafeAreaView style={styles.container}>
@@ -242,14 +274,14 @@ export default function HomeScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Hidden WebView for yt-dlp.js */}
+      {/* Hidden WebView that runs yt‑dlp.js */}
       <WebView
         ref={webViewRef}
         source={{ html: YTDLP_HTML }}
         style={{ height: 0, width: 0, opacity: 0 }}
         javaScriptEnabled={true}
         domStorageEnabled={true}
-        onMessage={(event) => {
+        onMessage={(event: WebViewMessageEvent) => {
           if ((window as any).onWebViewMessage) {
             (window as any).onWebViewMessage(event);
           }
@@ -316,7 +348,9 @@ export default function HomeScreen() {
   );
 }
 
-// Keep your existing styles
+/* -------------------------------------------------------------
+   All of your original styles – unchanged
+   ------------------------------------------------------------- */
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   loginBox: {
