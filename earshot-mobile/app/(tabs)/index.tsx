@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Text,
   View,
@@ -13,7 +13,8 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { MotiView, AnimatePresence } from 'moti';
-import { Audio } from 'expo-av'; // ← ONLY THIS ONE
+import { Audio } from 'expo-av';
+import { WebView } from 'react-native-webview';
 import * as Linking from 'expo-linking';
 
 const { width } = Dimensions.get('window');
@@ -27,8 +28,35 @@ interface Post {
   artist: string;
   thumbnail: string;
   username: string;
-  url: string; // We need the original URL to play
+  url: string;
 }
+
+// yt-dlp.js in hidden WebView
+const YTDLP_HTML = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="https://unpkg.com/yt-dlp.js@latest/dist/yt-dlp.min.js"></script>
+</head>
+<body>
+<script>
+async function getAudio(url) {
+  try {
+    const ytdlp = new YTDLP();
+    const info = await ytdlp.getInfo(url);
+    const audio = info.formats
+      .filter(f => !f.vcodec && f.url)
+      .sort((a, b) => (b.abr || 0) - (a.abr || 0))[0];
+    window.ReactNativeWebView.postMessage(audio.url);
+  } catch (e) {
+    window.ReactNativeWebView.postMessage("ERROR: " + e.message);
+  }
+}
+</script>
+</body>
+</html>
+`;
 
 export default function HomeScreen() {
   const [token, setToken] = useState<string | null>(null);
@@ -40,8 +68,10 @@ export default function HomeScreen() {
   const [sound, setSound] = useState<Audio.Sound | null>(null);
   const [playingId, setPlayingId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
+  const [currentAudioUrl, setCurrentAudioUrl] = useState<string | null>(null);
+  const webViewRef = useRef<any>(null);
 
-  // Cleanup sound on unmount
+  // Cleanup sound
   useEffect(() => {
     return () => {
       sound?.unloadAsync();
@@ -109,7 +139,7 @@ export default function HomeScreen() {
     setFlipped(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-     const playSong = async (post: Post) => {
+  const playSong = async (post: Post) => {
     if (playingId === post.id) {
       await sound?.pauseAsync();
       setPlayingId(null);
@@ -118,43 +148,48 @@ export default function HomeScreen() {
 
     setLoading(true);
     try {
-      // Unload previous sound
-      if (sound) {
-        try {
-          await sound.unloadAsync();
-        } catch (e) {
-          console.warn('Unload failed:', e);
-        }
-      }
+      if (sound) await sound.unloadAsync();
 
-      // Get direct audio URL from backend
-      const res = await fetch(`${API_URL}/api/ytdl?url=${encodeURIComponent(post.url)}`);
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
+      // Trigger WebView to extract audio URL
+      setCurrentAudioUrl(null);
+      webViewRef.current?.injectJavaScript(`
+        getAudio("${post.url.replace(/"/g, '\\"')}");
+        true;
+      `);
 
-      const proxyUrl = `${API_URL}/api/audio?url=${encodeURIComponent(data.audioUrl)}`;
-      console.log('PROXY URL:', proxyUrl);
+      // Wait for audio URL from WebView
+      const audioUrl = await new Promise<string>((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('Timeout')), 10000);
+        const handler = (event: any) => {
+          const msg = event.nativeEvent.data;
+          clearTimeout(timeout);
+          if (msg.startsWith('http')) {
+            resolve(msg);
+          } else {
+            reject(new Error(msg));
+          }
+        };
+        // We'll attach this in render
+        (window as any).onWebViewMessage = handler;
+      });
 
       const { sound: newSound } = await Audio.Sound.createAsync(
-        { uri: proxyUrl },
-        { shouldPlay: true },
-        (status: any) => {
-          console.log('PLAYBACK STATUS:', status);
-        }
+        { uri: audioUrl },
+        { shouldPlay: true }
       );
 
       setSound(newSound);
       setPlayingId(post.id);
+      setCurrentAudioUrl(audioUrl);
 
       newSound.setOnPlaybackStatusUpdate((status: any) => {
         if (status.isLoaded && status.didJustFinish) {
           setPlayingId(null);
         }
       });
-
     } catch (err: any) {
       console.error('PLAY ERROR:', err.message);
-      Alert.alert('Play Failed', err.message || 'Unknown error');
+      Alert.alert('Play Failed', err.message || 'Could not play audio');
     } finally {
       setLoading(false);
     }
@@ -207,6 +242,20 @@ export default function HomeScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Hidden WebView for yt-dlp.js */}
+      <WebView
+        ref={webViewRef}
+        source={{ html: YTDLP_HTML }}
+        style={{ height: 0, width: 0, opacity: 0 }}
+        javaScriptEnabled={true}
+        domStorageEnabled={true}
+        onMessage={(event) => {
+          if ((window as any).onWebViewMessage) {
+            (window as any).onWebViewMessage(event);
+          }
+        }}
+      />
+
       <FlatList
         data={feed}
         keyExtractor={item => item.id.toString()}
@@ -248,7 +297,7 @@ export default function HomeScreen() {
                         disabled={loading}
                       >
                         {loading && playingId === item.id ? (
-                          <ActivityIndicator color="#1DB954" />
+                          <ActivityIndicator color="#fff" />
                         ) : (
                           <Text style={styles.playText}>
                             {playingId === item.id ? 'Pause' : 'Play'}
@@ -267,6 +316,7 @@ export default function HomeScreen() {
   );
 }
 
+// Keep your existing styles
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   loginBox: {
