@@ -535,28 +535,42 @@ def ytdl():
         return jsonify({'error': 'No URL'}), 400
 
     try:
+        # Full Chrome headers
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-us,en;q=0.5',
+            'Accept-Encoding': 'gzip,deflate',
+            'Accept-Charset': 'ISO-8859-1,utf-8;q=0.7,*;q=0.7',
+            'Referer': 'https://www.youtube.com/',
+            'Origin': 'https://www.youtube.com',
+        }
+
         ydl_opts = {
             'format': 'bestaudio/best',
             'quiet': True,
             'no_warnings': True,
             'noplaylist': True,
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Referer': 'https://www.youtube.com/',
-                'Origin': 'https://www.youtube.com',
-            },
-            'cookiefile': 'cookies.txt',  # Optional: if you have cookies
+            'http_headers': headers,
+            'cookiefile': 'cookies.txt',  # Optional: if you have real cookies
+            'extractor_args': {
+                'youtube': {
+                    'skip': ['hls', 'dash'],
+                }
+            }
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
-            audio_url = info['url']
-            return jsonify({'audioUrl': audio_url})
+            if not info or 'url' not in info:
+                return jsonify({'error': 'No audio stream found'}), 404
+            return jsonify({'audioUrl': info['url']})
 
     except Exception as e:
-        print("YTDL ERROR:", str(e))
-        return jsonify({'error': str(e)}), 500
-
+        error_msg = str(e)
+        if 'Sign in to confirm' in error_msg:
+            return jsonify({'error': 'YouTube blocked this video. Try a different one.'}), 403
+        return jsonify({'error': error_msg}), 500
 import requests
 from flask import Response, stream_with_context
 
