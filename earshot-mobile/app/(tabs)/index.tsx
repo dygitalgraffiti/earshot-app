@@ -160,15 +160,6 @@ export default function HomeScreen() {
     }
   };
 
-      // Try to extract audio URL
-      
-    } catch (err) {
-      Alert.alert('Play Failed', 'Could not play this track');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   if (!token) {
     return (
       <SafeAreaView style={styles.container}>
