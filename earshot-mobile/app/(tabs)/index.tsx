@@ -161,20 +161,7 @@ export default function HomeScreen() {
   };
 
       // Try to extract audio URL
-      let audioUrl = post.url;
-
-      const { sound: newSound } = await Audio.Sound.createAsync(
-        { uri: audioUrl },
-        { shouldPlay: true }
-      );
-      setSound(newSound);
-      setPlayingId(post.id);
-
-      newSound.setOnPlaybackStatusUpdate(status => {
-        if (status.isLoaded && status.didJustFinish) {
-          setPlayingId(null);
-        }
-      });
+      
     } catch (err) {
       Alert.alert('Play Failed', 'Could not play this track');
     } finally {
