@@ -554,6 +554,9 @@ def ytdl():
 import requests
 from flask import Response, stream_with_context
 
+import requests
+from flask import Response
+
 @app.route('/api/audio')
 def audio_proxy():
     url = request.args.get('url')
@@ -561,26 +564,28 @@ def audio_proxy():
         return "No URL", 400
 
     try:
-        # Stream from YouTube
-        response = requests.get(url, stream=True, timeout=10)
+        # Stream with minimal headers
+        response = requests.get(
+            url,
+            stream=True,
+            timeout=15,
+            headers={'User-Agent': 'Mozilla/5.0'}
+        )
         response.raise_for_status()
 
         def generate():
-            for chunk in response.iter_content(chunk_size=8192):
+            for chunk in response.iter_content(chunk_size=32768):
                 if chunk:
                     yield chunk
 
         return Response(
-            stream_with_context(generate()),
+            generate(),
             content_type=response.headers.get('Content-Type', 'audio/webm'),
-            headers={
-                'Accept-Ranges': 'bytes',
-                'Cache-Control': 'no-cache',
-            }
+            direct_passthrough=True
         )
     except Exception as e:
-        print("PROXY ERROR:", e)
-        return str(e), 500
+        print("AUDIO PROXY ERROR:", str(e))
+        return f"Proxy failed: {str(e)}", 500
 
 
 
