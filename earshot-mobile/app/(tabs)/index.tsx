@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Audio } from 'expo-av';
 import {
   Text,
   View,
@@ -111,13 +112,46 @@ export default function HomeScreen() {
 
   const playSong = async (post: Post) => {
     if (playingId === post.id) {
-      sound?.pauseAsync();
+      await sound?.pauseAsync();
       setPlayingId(null);
       return;
     }
 
     setLoading(true);
     try {
+      if (sound) await sound.unloadAsync();
+
+      const res = await fetch(`${API_URL}/api/ytdl?url=${encodeURIComponent(post.url)}`);
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      const proxyUrl = `${API_URL}/api/audio?url=${encodeURIComponent(data.audioUrl)}`;
+      console.log('PROXY URL:', proxyUrl);
+
+      const { sound: newSound } = await Audio.Sound.createAsync(
+        { uri: proxyUrl },
+        { shouldPlay: true },
+        (status: any) => {
+          console.log('PLAYBACK STATUS:', status);
+        }
+      );
+
+      setSound(newSound);
+      setPlayingId(post.id);
+
+      newSound.setOnPlaybackStatusUpdate((status: any) => {
+        if (status.isLoaded && status.didJustFinish) {
+          setPlayingId(null);
+        }
+      });
+
+    } catch (err: any) {
+      console.error('PLAY ERROR:', err.message);
+      Alert.alert('Play Failed', err.message || 'Unknown error');
+    } finally {
+      setLoading(false);
+    }
+  };
       // Stop previous
       if (sound) {
         await sound.unloadAsync();
@@ -131,7 +165,7 @@ export default function HomeScreen() {
         const res = await fetch(`${API_URL}/api/ytdl?url=${encodeURIComponent(post.url)}`);
         const data = await res.json();
         if (data.audioUrl) {
-          audioUrl = data.audioUrl;
+          audioUrl = `${API_URL}/api/audio?url=${encodeURIComponent(data.audioUrl)}`;
         }
       }
 
