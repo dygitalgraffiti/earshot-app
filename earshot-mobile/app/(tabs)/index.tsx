@@ -163,15 +163,6 @@ export default function HomeScreen() {
       // Try to extract audio URL
       let audioUrl = post.url;
 
-      // If YouTube, use ytdl proxy (you'll need to add this endpoint)
-      if (post.url.includes('youtube.com') || post.url.includes('youtu.be')) {
-        const res = await fetch(`${API_URL}/api/ytdl?url=${encodeURIComponent(post.url)}`);
-        const data = await res.json();
-        if (data.audioUrl) {
-          audioUrl = `${API_URL}/api/audio?url=${encodeURIComponent(data.audioUrl)}`;
-        }
-      }
-
       const { sound: newSound } = await Audio.Sound.createAsync(
         { uri: audioUrl },
         { shouldPlay: true }
