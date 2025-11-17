@@ -319,8 +319,8 @@ export default function HomeScreen() {
         {/* DEBUG: Always show this to confirm new code is running */}
         <View style={{ padding: 10, backgroundColor: '#1DB954', margin: 10, borderRadius: 8 }}>
           <Text style={{ color: '#000', fontWeight: 'bold', textAlign: 'center' }}>
-            NEW CODE VERSION - {feed.length} posts loaded
-          </Text>
+        NEW CODE VERSION v2 - {feed.length} posts loaded
+</Text>
         </View>
 
         {/* VINYL RECORD STACK */}
