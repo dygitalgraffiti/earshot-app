@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Text,
   View,
@@ -12,8 +12,10 @@ import {
   Dimensions,
   ActivityIndicator,
   Linking,
+  Animated,
 } from 'react-native';
 import { MotiView, AnimatePresence } from 'moti';
+import * as Haptics from 'expo-haptics';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = width * 0.42;
@@ -37,6 +39,10 @@ export default function HomeScreen() {
   const [password, setPassword] = useState('');
   const [flipped, setFlipped] = useState<Record<number, boolean>>({});
   const [openingId, setOpeningId] = useState<number | null>(null);
+  const [currentTrack, setCurrentTrack] = useState<Post | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const flatListRef = useRef<FlatList>(null);
+  const miniPlayerAnim = useRef(new Animated.Value(0)).current;
 
   /* AUTH */
   const login = async () => {
@@ -100,10 +106,12 @@ export default function HomeScreen() {
     setFlipped(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  /* PLAY – App or Browser */
+  /* MINI-PLAYER: Open, Play/Pause, Close */
   const playSong = async (post: Post) => {
     if (openingId === post.id) return;
     setOpeningId(post.id);
+
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
     let target = post.url;
     if (target.startsWith('spotify:')) {
@@ -113,11 +121,44 @@ export default function HomeScreen() {
     try {
       const canOpen = await Linking.canOpenURL(target);
       await Linking.openURL(target);
+
+      // Update mini-player
+      setCurrentTrack(post);
+      setIsPlaying(true);
+
+      // Scroll to card
+      const index = feed.findIndex(p => p.id === post.id);
+      if (index !== -1) {
+        flatListRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 });
+      }
+
+      // Animate in
+      Animated.timing(miniPlayerAnim, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
     } catch {
       await Linking.openURL(target);
     } finally {
       setOpeningId(null);
     }
+  };
+
+  const togglePlayPause = () => {
+    setIsPlaying(prev => !prev);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  const closePlayer = () => {
+    Animated.timing(miniPlayerAnim, {
+      toValue: 0,
+      duration: 300,
+      useNativeDriver: true,
+    }).start(() => {
+      setCurrentTrack(null);
+      setIsPlaying(false);
+    });
   };
 
   if (!token) {
@@ -151,6 +192,7 @@ export default function HomeScreen() {
       </View>
 
       <FlatList
+        ref={flatListRef}
         data={feed}
         keyExtractor={item => item.id.toString()}
         contentContainerStyle={styles.feed}
@@ -169,7 +211,6 @@ export default function HomeScreen() {
                       transition={{ type: 'timing', duration: 300 }}
                       style={styles.cardFront}
                     >
-                      {/* CROPPED ALBUM ART – NO BLACK BARS */}
                       <View style={styles.albumArtContainer}>
                         <Image
                           source={{ uri: item.thumbnail }}
@@ -211,151 +252,84 @@ export default function HomeScreen() {
           </View>
         )}
       />
+
+      {/* MINI-PLAYER */}
+      {currentTrack && (
+        <Animated.View
+          style={[
+            styles.miniPlayer,
+            {
+              transform: [
+                {
+                  translateY: miniPlayerAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [100, 0],
+                  }),
+                },
+              ],
+            },
+          ]}
+        >
+          <Image source={{ uri: currentTrack.thumbnail }} style={styles.miniArt} />
+          <View style={{ flex: 1, marginLeft: 12 }}>
+            <Text style={styles.miniTitle} numberOfLines={1}>{currentTrack.title}</Text>
+            <Text style={styles.miniArtist} numberOfLines={1}>{currentTrack.artist}</Text>
+          </View>
+          <TouchableOpacity onPress={togglePlayPause}>
+            <Text style={styles.miniPlay}>{isPlaying ? 'Pause' : 'Play'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={closePlayer} style={{ marginLeft: 16 }}>
+            <Text style={styles.miniClose}>×</Text>
+          </TouchableOpacity>
+        </Animated.View>
+      )}
     </SafeAreaView>
   );
 }
 
-/* STYLES – CROPPED ART + NO BLACK BARS */
+/* STYLES */
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
-  loginBox: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  logo: {
-    fontSize: 48,
-    fontWeight: 'bold',
-    color: '#1DB954',
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  slogan: {
-    fontSize: 14,
-    color: '#888',
-    textAlign: 'center',
-    marginBottom: 40,
-  },
-  input: {
-    backgroundColor: '#222',
-    color: '#fff',
-    width: '100%',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 16,
-    fontSize: 16,
-  },
-  button: {
-    backgroundColor: '#1DB954',
-    width: '100%',
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  buttonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 16,
-  },
-  header: {
-    padding: 20,
-    alignItems: 'center',
-  },
-  postBox: {
-    paddingHorizontal: 20,
-    marginBottom: 16,
-  },
-  postBtn: {
-    backgroundColor: '#1DB954',
-    padding: 12,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  postBtnText: {
-    color: '#fff',
-    fontWeight: 'bold',
-  },
-  feed: {
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-  },
-  card: {
-    marginBottom: 32,
-    alignItems: 'center',
-  },
-  flipWrapper: {
-    width: CARD_WIDTH,
-    height: CARD_WIDTH,
-  },
-  cardFront: {
-    width: CARD_WIDTH,
-    height: CARD_WIDTH,
-    borderRadius: 20,
-    overflow: 'hidden',
-    backgroundColor: '#111',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  // NEW: Crop container
-  albumArtContainer: {
-    width: CARD_WIDTH,
-    height: CARD_WIDTH,
-    overflow: 'hidden',
-    borderRadius: 20,
-  },
-  // NEW: Crop 16:9 → 1:1 center
- albumArtCropped: {
-  width: CARD_WIDTH * 1.78,
-  height: CARD_WIDTH * 1.78,
-  position: 'absolute',
-  left: -CARD_WIDTH * 0.39,
-  top: -CARD_WIDTH * 0.39,
-},
-  frontUsername: {
+  loginBox: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
+  logo: { fontSize: 48, fontWeight: 'bold', color: '#1DB954', textAlign: 'center', marginBottom: 8 },
+  slogan: { fontSize: 14, color: '#888', textAlign: 'center', marginBottom: 40 },
+  input: { backgroundColor: '#222', color: '#fff', width: '100%', padding: 16, borderRadius: 12, marginBottom: 16, fontSize: 16 },
+  button: { backgroundColor: '#1DB954', width: '100%', padding: 16, borderRadius: 12, alignItems: 'center' },
+  buttonText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
+  header: { padding: 20, alignItems: 'center' },
+  postBox: { paddingHorizontal: 20, marginBottom: 16 },
+  postBtn: { backgroundColor: '#1DB954', padding: 12, borderRadius: 12, alignItems: 'center', marginTop: 8 },
+  postBtnText: { color: '#fff', fontWeight: 'bold' },
+  feed: { paddingHorizontal: 20, paddingBottom: 100 },
+  card: { marginBottom: 32, alignItems: 'center' },
+  flipWrapper: { width: CARD_WIDTH, height: CARD_WIDTH },
+  cardFront: { width: CARD_WIDTH, height: CARD_WIDTH, borderRadius: 16, overflow: 'hidden', backgroundColor: '#111', justifyContent: 'center', alignItems: 'center' },
+  albumArtContainer: { width: CARD_WIDTH, height: CARD_WIDTH, overflow: 'hidden', borderRadius: 16 },
+  albumArtCropped: { width: CARD_WIDTH * 1.78, height: CARD_WIDTH * 1.78, position: 'absolute', left: -CARD_WIDTH * 0.39, top: -CARD_WIDTH * 0.39 },
+  frontUsername: { position: 'absolute', bottom: 12, left: 12, color: '#1DB954', fontSize: 12, fontWeight: 'bold', backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  cardBack: { width: CARD_WIDTH, height: CARD_WIDTH, backgroundColor: '#111', borderRadius: 16, padding: 16, justifyContent: 'center', alignItems: 'center' },
+  backTitle: { color: '#fff', fontWeight: 'bold', fontSize: 14, textAlign: 'center', marginBottom: 6 },
+  backArtist: { color: '#aaa', fontSize: 12, textAlign: 'center', marginBottom: 16 },
+  playButton: { backgroundColor: '#1DB954', paddingHorizontal: 24, paddingVertical: 8, borderRadius: 20 },
+  playText: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
+
+  // MINI-PLAYER
+  miniPlayer: {
     position: 'absolute',
-    bottom: 16,
-    left: 16,
-    color: '#1DB954',
-    fontSize: 14,
-    fontWeight: 'bold',
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  cardBack: {
-    width: CARD_WIDTH,
-    height: CARD_WIDTH,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 72,
     backgroundColor: '#111',
-    borderRadius: 20,
-    padding: 20,
-    justifyContent: 'center',
+    flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: 16,
+    borderTopWidth: 1,
+    borderColor: '#333',
   },
-  backTitle: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 18,
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  backArtist: {
-    color: '#aaa',
-    fontSize: 16,
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  playButton: {
-    backgroundColor: '#1DB954',
-    paddingHorizontal: 32,
-    paddingVertical: 12,
-    borderRadius: 30,
-  },
-  playText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 16,
-  },
+  miniArt: { width: 48, height: 48, borderRadius: 8 },
+  miniTitle: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
+  miniArtist: { color: '#aaa', fontSize: 12 },
+  miniPlay: { color: '#1DB954', fontWeight: 'bold', fontSize: 16 },
+  miniClose: { color: '#fff', fontSize: 24 },
 });
