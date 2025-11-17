@@ -13,8 +13,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { MotiView, AnimatePresence } from 'moti';
-import { Audio } from 'expo-av';
-import { WebView, WebViewMessageEvent } from 'react-native-webview';
+import { WebView } from 'react-native-webview';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = width * 0.85;
@@ -30,55 +29,6 @@ interface Post {
   url: string;
 }
 
-/* yt-dlp.js – loads once, works forever */
-const YTDLP_HTML = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <script src="https://unpkg.com/yt-dlp.js@latest/dist/yt-dlp.min.js"></script>
-</head>
-<body>
-<script>
-let ytdlpReady = false;
-let pendingUrl = null;
-
-function onYTDLPReady() {
-  ytdlpReady = true;
-  if (pendingUrl) {
-    getAudio(pendingUrl);
-    pendingUrl = null;
-  }
-}
-
-async function getAudio(url) {
-  if (!ytdlpReady) {
-    pendingUrl = url;
-    return;
-  }
-  try {
-    const ytdlp = new YTDLP();
-    const info = await ytdlp.getInfo(url);
-    const audio = info.formats
-      .filter(f => !f.vcodec && f.url)
-      .sort((a, b) => (b.abr || 0) - (a.abr || 0))[0];
-    window.ReactNativeWebView.postMessage(audio.url);
-  } catch (e) {
-    window.ReactNativeWebView.postMessage("ERROR: " + e.message);
-  }
-}
-
-const check = setInterval(() => {
-  if (typeof YTDLP !== 'undefined') {
-    clearInterval(check);
-    onYTDLPReady();
-  }
-}, 50);
-</script>
-</body>
-</html>
-`;
-
 export default function HomeScreen() {
   const [token, setToken] = useState<string | null>(null);
   const [feed, setFeed] = useState<Post[]>([]);
@@ -86,16 +36,8 @@ export default function HomeScreen() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [flipped, setFlipped] = useState<Record<number, boolean>>({});
-  const [sound, setSound] = useState<Audio.Sound | null>(null);
   const [playingId, setPlayingId] = useState<number | null>(null);
-  const [loading, setLoading] = useState(false);
-  const webViewRef = useRef<WebView>(null);
-
-  useEffect(() => {
-    return () => {
-      sound?.unloadAsync();
-    };
-  }, [sound]);
+  const [playerUrl, setPlayerUrl] = useState<string | null>(null);
 
   const login = async () => {
     if (!username || !password) {
@@ -158,83 +100,22 @@ export default function HomeScreen() {
     setFlipped(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  /* FINAL PLAY SONG – RETRY + DEBUG + LOADING */
-  const playSong = async (post: Post) => {
+  /* PLAY SONG – YouTube iframe (instant, reliable) */
+  const playSong = (post: Post) => {
     if (playingId === post.id) {
-      await sound?.pauseAsync();
       setPlayingId(null);
+      setPlayerUrl(null);
       return;
     }
 
-    setLoading(true);
-    let attempts = 0;
-    const maxAttempts = 3;
-
-    const tryPlay = async (): Promise<void> => {
-      attempts++;
-      console.log(`Attempt ${attempts} for: ${post.title} (${post.url})`);
-
-      try {
-        if (sound) await sound.unloadAsync();
-
-        const audioUrl = await new Promise<string>((resolve, reject) => {
-          const timeout = setTimeout(() => reject(new Error('Timeout')), 30000);
-
-          (window as any).onWebViewMessage = (event: WebViewMessageEvent) => {
-            const data = event.nativeEvent.data;
-            clearTimeout(timeout);
-
-            if (data.startsWith('http')) {
-              console.log('AUDIO URL:', data);
-              resolve(data);
-            } else if (data.startsWith('ERROR:')) {
-              console.error('YT-DLP ERROR:', data);
-              reject(new Error(data));
-            } else {
-              console.log('Sending to yt-dlp.js:', data);
-              webViewRef.current?.injectJavaScript(`
-                console.log("Extracting: ${data}");
-                getAudio("${data.replace(/"/g, '\\"')}");
-                true;
-              `);
-            }
-          };
-
-          webViewRef.current?.postMessage(post.url);
-        });
-
-        const { sound: newSound } = await Audio.Sound.createAsync(
-          { uri: audioUrl },
-          { shouldPlay: true }
-        );
-
-        setSound(newSound);
-        setPlayingId(post.id);
-
-        newSound.setOnPlaybackStatusUpdate((status: any) => {
-          if (status.isLoaded && status.didJustFinish) {
-            setPlayingId(null);
-          }
-        });
-        return;
-      } catch (err: any) {
-        console.error(`Attempt ${attempts} failed:`, err.message);
-        if (attempts < maxAttempts) {
-          await new Promise(r => setTimeout(r, 3000));
-          return tryPlay();
-        } else {
-          throw err;
-        }
-      }
-    };
-
-    try {
-      await tryPlay();
-    } catch (err: any) {
-      Alert.alert('Play Failed', err.message || 'Could not play audio');
-    } finally {
-      setLoading(false);
+    const videoId = post.url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)/)?.[1];
+    if (!videoId) {
+      Alert.alert('Invalid URL', 'Not a YouTube link');
+      return;
     }
+
+    setPlayerUrl(`https://www.youtube.com/embed/${videoId}?autoplay=1&playsinline=1&modestbranding=1`);
+    setPlayingId(post.id);
   };
 
   if (!token) {
@@ -284,20 +165,6 @@ export default function HomeScreen() {
         </TouchableOpacity>
       </View>
 
-      <WebView
-        ref={webViewRef}
-        source={{ html: YTDLP_HTML }}
-        style={{ height: 0, width: 0, opacity: 0 }}
-        javaScriptEnabled={true}
-        domStorageEnabled={true}
-        onMessage={(event: WebViewMessageEvent) => {
-          console.log('WebView →', event.nativeEvent.data);
-          if ((window as any).onWebViewMessage) {
-            (window as any).onWebViewMessage(event);
-          }
-        }}
-      />
-
       <FlatList
         data={feed}
         keyExtractor={item => item.id.toString()}
@@ -336,18 +203,10 @@ export default function HomeScreen() {
                       <TouchableOpacity
                         style={styles.playButton}
                         onPress={() => playSong(item)}
-                        disabled={loading}
                       >
-                        {loading && playingId === item.id ? (
-                          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                            <ActivityIndicator color="#fff" />
-                            <Text style={[styles.playText, { marginLeft: 8 }]}>Loading...</Text>
-                          </View>
-                        ) : (
-                          <Text style={styles.playText}>
-                            {playingId === item.id ? 'Pause' : 'Play'}
-                          </Text>
-                        )}
+                        <Text style={styles.playText}>
+                          {playingId === item.id ? 'Stop' : 'Play'}
+                        </Text>
                       </TouchableOpacity>
                     </MotiView>
                   )}
@@ -357,6 +216,27 @@ export default function HomeScreen() {
           </View>
         )}
       />
+
+      {/* Mini YouTube Player */}
+      {playerUrl && (
+        <View style={styles.playerContainer}>
+          <WebView
+            source={{ uri: playerUrl }}
+            allowsInlineMediaPlayback={true}
+            mediaPlaybackRequiresUserAction={false}
+            style={styles.player}
+          />
+          <TouchableOpacity
+            onPress={() => {
+              setPlayerUrl(null);
+              setPlayingId(null);
+            }}
+            style={styles.closeButton}
+          >
+            <Text style={styles.closeText}>✕</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -424,7 +304,7 @@ const styles = StyleSheet.create({
   },
   feed: {
     paddingHorizontal: 20,
-    paddingBottom: 20,
+    paddingBottom: 100, // Space for player
   },
   card: {
     marginBottom: 32,
@@ -491,6 +371,31 @@ const styles = StyleSheet.create({
   playText: {
     color: '#fff',
     fontWeight: 'bold',
+    fontSize: 16,
+  },
+  playerContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 80,
+    backgroundColor: '#000',
+    borderTopWidth: 1,
+    borderColor: '#333',
+  },
+  player: {
+    height: 80,
+  },
+  closeButton: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    padding: 8,
+    borderRadius: 20,
+  },
+  closeText: {
+    color: '#fff',
     fontSize: 16,
   },
 });
