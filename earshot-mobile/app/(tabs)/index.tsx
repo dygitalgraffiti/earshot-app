@@ -112,6 +112,7 @@ export default function HomeScreen() {
         headers: { Authorization: `Bearer ${t}` },
       });
       const data = await res.json();
+      console.log('Feed loaded:', data.length, 'posts');
       setFeed(data);
       setCurrentIndex(0);
     } catch {
@@ -289,6 +290,15 @@ export default function HomeScreen() {
   const currentPost = feed[currentIndex];
   const hasNext = currentIndex < feed.length - 1;
   const hasPrevious = currentIndex > 0;
+
+  // Debug logging
+  useEffect(() => {
+    console.log('Feed state:', {
+      feedLength: feed.length,
+      currentIndex,
+      hasCurrentPost: !!currentPost,
+    });
+  }, [feed, currentIndex, currentPost]);
 
   return (
     <SafeAreaProvider style={{ flex: 1, backgroundColor: '#000' }}>
