@@ -293,7 +293,8 @@ def feed_following():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        username = request.form.get('username')
+        username = request.form['username'].strip().lower()   # ← ADD .lower()
+        user = User.query.filter(func.lower(User.username) == username).first()
         password = request.form.get('password')
         user = User.query.filter_by(username=username, password=password).first()
         if user:
@@ -312,21 +313,21 @@ def login():
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
-        if not username or not password:
-            return jsonify({'success': False, 'error': 'Both fields required'}), 400
-        if User.query.filter_by(username=username).first():
-            return jsonify({'success': False, 'error': 'Username taken'}), 400
+        username = request.form['username'].strip().lower()   # ← FORCE LOWERCASE
+        password = request.form['password']
 
-        user = User(username=username, password=password)
-        db.session.add(user)
+        # Check if user already exists (case-insensitive)
+        if User.query.filter(func.lower(User.username) == username).first():
+            flash('Username already taken')
+            return render_template('register.html')
+
+        # Create new user (store lowercase)
+        new_user = User(username=username, password=generate_password_hash(password))
+        db.session.add(new_user)
         db.session.commit()
-        session['user_id'] = user.id
-        session['username'] = user.username
-        if request.is_json:
-            return jsonify({'success': True, 'user_id': user.id, 'username': user.username})
-        return redirect(url_for('index'))
+        flash('Registered successfully! Please log in.')
+        return redirect(url_for('login'))
+
     return render_template('register.html')
 
 @app.route('/logout')
