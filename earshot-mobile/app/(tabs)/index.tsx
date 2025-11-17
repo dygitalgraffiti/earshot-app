@@ -1,3 +1,4 @@
+// app/(tabs)/index.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Text,
@@ -7,7 +8,6 @@ import {
   Image,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   Alert,
   Dimensions,
   ActivityIndicator,
@@ -16,6 +16,8 @@ import {
 } from 'react-native';
 import { MotiView, AnimatePresence } from 'moti';
 import * as Haptics from 'expo-haptics';
+import { useNavigation } from '@react-navigation/native';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = width * 0.42;
@@ -29,9 +31,13 @@ interface Post {
   thumbnail: string;
   username: string;
   url: string;
+  createdAt: string; // ISO string from server
 }
 
 export default function HomeScreen() {
+  const insets = useSafeAreaInsets();
+  const navigation = useNavigation<any>();
+
   const [token, setToken] = useState<string | null>(null);
   const [feed, setFeed] = useState<Post[]>([]);
   const [url, setUrl] = useState('');
@@ -44,7 +50,7 @@ export default function HomeScreen() {
   const flatListRef = useRef<FlatList>(null);
   const miniPlayerAnim = useRef(new Animated.Value(0)).current;
 
-  /* AUTH */
+  /* ────── AUTH ────── */
   const login = async () => {
     if (!username || !password) {
       Alert.alert('Missing', 'Please fill in both fields');
@@ -106,11 +112,10 @@ export default function HomeScreen() {
     setFlipped(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  /* MINI-PLAYER: Open, Play/Pause, Close */
+  /* ────── PLAY ────── */
   const playSong = async (post: Post) => {
     if (openingId === post.id) return;
     setOpeningId(post.id);
-
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
     let target = post.url;
@@ -119,51 +124,58 @@ export default function HomeScreen() {
     }
 
     try {
-      const canOpen = await Linking.canOpenURL(target);
       await Linking.openURL(target);
-
-      // Update mini-player
       setCurrentTrack(post);
       setIsPlaying(true);
+      const idx = feed.findIndex(p => p.id === post.id);
+      if (idx !== -1) flatListRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.5 });
+      Animated.timing(miniPlayerAnim, { toValue: 1, duration: 300, useNativeDriver: true }).start();
 
-      // Scroll to card
-      const index = feed.findIndex(p => p.id === post.id);
-      if (index !== -1) {
-        flatListRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 });
-      }
-
-      // Animate in
-      Animated.timing(miniPlayerAnim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
-    } catch {
-      await Linking.openURL(target);
+      // auto‑hide after 30 s
+      setTimeout(() => {
+        if (currentTrack?.id === post.id) closePlayer();
+      }, 30_000);
+    } catch (e) {
+      console.warn(e);
     } finally {
       setOpeningId(null);
     }
   };
 
   const togglePlayPause = () => {
-    setIsPlaying(prev => !prev);
+    setIsPlaying(p => !p);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
   const closePlayer = () => {
-    Animated.timing(miniPlayerAnim, {
-      toValue: 0,
-      duration: 300,
-      useNativeDriver: true,
-    }).start(() => {
+    Animated.timing(miniPlayerAnim, { toValue: 0, duration: 300, useNativeDriver: true }).start(() => {
       setCurrentTrack(null);
       setIsPlaying(false);
     });
   };
 
+  /* ────── PROFILE NAV ────── */
+  const openProfile = (username: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    navigation.navigate('ProfileScreen', { username });
+  };
+
+  /* ────── DATE HELPERS ────── */
+  const formatDate = (iso: string) => {
+    if (!iso) return 'Just now';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return 'Invalid date';
+    const now = Date.now();
+    const diff = Math.floor((now - d.getTime()) / (1000 * 60 * 60 * 24));
+    if (diff === 0) return 'Today';
+    if (diff === 1) return 'Yesterday';
+    return `${diff}d ago`;
+  };
+
+  /* ────── UI ────── */
   if (!token) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaProvider style={{ flex: 1, backgroundColor: '#000' }}>
         <View style={styles.loginBox}>
           <Text style={styles.logo}>Earshot</Text>
           <Text style={styles.slogan}>Share music. Follow friends.</Text>
@@ -173,121 +185,130 @@ export default function HomeScreen() {
             <Text style={styles.buttonText}>LOGIN</Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </SafeAreaProvider>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.logo}>Earshot</Text>
-        <Text style={styles.slogan}>Share music. Follow friends.</Text>
-      </View>
+    <SafeAreaProvider style={{ flex: 1, backgroundColor: '#000' }}>
+      <View style={[styles.container, { paddingTop: insets.top }]}>
+        <View style={styles.header}>
+          <Text style={styles.logo}>Earshot</Text>
+          <Text style={styles.slogan}>Share music. Follow friends.</Text>
+        </View>
 
-      <View style={styles.postBox}>
-        <TextInput placeholder="Paste YouTube/Spotify link..." value={url} onChangeText={setUrl} style={styles.input} />
-        <TouchableOpacity style={styles.postBtn} onPress={postTrack}>
-          <Text style={styles.postBtnText}>POST</Text>
-        </TouchableOpacity>
-      </View>
+        <View style={styles.postBox}>
+          <TextInput placeholder="Paste YouTube/Spotify link..." value={url} onChangeText={setUrl} style={styles.input} />
+          <TouchableOpacity style={styles.postBtn} onPress={postTrack}>
+            <Text style={styles.postBtnText}>POST</Text>
+          </TouchableOpacity>
+        </View>
 
-      <FlatList
-        ref={flatListRef}
-        data={feed}
-        keyExtractor={item => item.id.toString()}
-        contentContainerStyle={styles.feed}
-        showsVerticalScrollIndicator={false}
-        renderItem={({ item }) => (
-          <View style={styles.card}>
-            <TouchableOpacity onPress={() => toggleFlip(item.id)} activeOpacity={0.95}>
-              <View style={styles.flipWrapper}>
-                <AnimatePresence>
-                  {!flipped[item.id] ? (
-                    <MotiView
-                      key={`front-${item.id}`}
-                      from={{ rotateY: '0deg' }}
-                      animate={{ rotateY: '0deg' }}
-                      exit={{ rotateY: '-90deg' }}
-                      transition={{ type: 'timing', duration: 300 }}
-                      style={styles.cardFront}
-                    >
-                      <View style={styles.albumArtContainer}>
-                        <Image
-                          source={{ uri: item.thumbnail }}
-                          style={styles.albumArtCropped}
-                          resizeMode="cover"
-                        />
-                      </View>
-                      <Text style={styles.frontUsername}>@{item.username}</Text>
-                    </MotiView>
-                  ) : (
-                    <MotiView
-                      key={`back-${item.id}`}
-                      from={{ rotateY: '90deg' }}
-                      animate={{ rotateY: '0deg' }}
-                      transition={{ type: 'timing', duration: 300 }}
-                      style={styles.cardBack}
-                    >
-                      <Text style={styles.backTitle} numberOfLines={2}>
-                        {item.title}
-                      </Text>
-                      <Text style={styles.backArtist}>{item.artist}</Text>
-
-                      <TouchableOpacity
-                        style={styles.playButton}
-                        onPress={() => playSong(item)}
-                        disabled={openingId === item.id}
+        <FlatList
+          ref={flatListRef}
+          data={feed}
+          keyExtractor={i => i.id.toString()}
+          contentContainerStyle={styles.feed}
+          showsVerticalScrollIndicator={false}
+          renderItem={({ item }) => (
+            <View style={styles.cardContainer}>
+              <TouchableOpacity onPress={() => toggleFlip(item.id)} activeOpacity={0.95}>
+                <View style={styles.flipWrapper}>
+                  <AnimatePresence>
+                    {!flipped[item.id] ? (
+                      <MotiView
+                        key={`front-${item.id}`}
+                        from={{ rotateY: '0deg' }}
+                        animate={{ rotateY: '0deg' }}
+                        exit={{ rotateY: '-90deg' }}
+                        transition={{ type: 'timing', duration: 300 }}
+                        style={styles.cardFront}
                       >
-                        {openingId === item.id ? (
-                          <ActivityIndicator color="#fff" />
-                        ) : (
-                          <Text style={styles.playText}>Play in App</Text>
-                        )}
-                      </TouchableOpacity>
-                    </MotiView>
-                  )}
-                </AnimatePresence>
-              </View>
-            </TouchableOpacity>
-          </View>
-        )}
-      />
+                        <View style={styles.albumArtContainer}>
+                          <Image source={{ uri: item.thumbnail }} style={styles.albumArtCropped} resizeMode="cover" />
+                        </View>
+                      </MotiView>
+                    ) : (
+                      <MotiView
+                        key={`back-${item.id}`}
+                        from={{ rotateY: '90deg' }}
+                        animate={{ rotateY: '0deg' }}
+                        transition={{ type: 'timing', duration: 300 }}
+                        style={styles.cardBack}
+                      >
+                        <Text style={styles.backTitle} numberOfLines={2}>
+                          {item.title}
+                        </Text>
+                        <Text style={styles.backArtist}>{item.artist}</Text>
 
-      {/* MINI-PLAYER */}
-      {currentTrack && (
-        <Animated.View
-          style={[
-            styles.miniPlayer,
-            {
-              transform: [
-                {
-                  translateY: miniPlayerAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [100, 0],
-                  }),
-                },
-              ],
-            },
-          ]}
-        >
-          <Image source={{ uri: currentTrack.thumbnail }} style={styles.miniArt} />
-          <View style={{ flex: 1, marginLeft: 12 }}>
-            <Text style={styles.miniTitle} numberOfLines={1}>{currentTrack.title}</Text>
-            <Text style={styles.miniArtist} numberOfLines={1}>{currentTrack.artist}</Text>
-          </View>
-          <TouchableOpacity onPress={togglePlayPause}>
-            <Text style={styles.miniPlay}>{isPlaying ? 'Pause' : 'Play'}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={closePlayer} style={{ marginLeft: 16 }}>
-            <Text style={styles.miniClose}>×</Text>
-          </TouchableOpacity>
-        </Animated.View>
-      )}
-    </SafeAreaView>
+                        <TouchableOpacity
+                          style={styles.playButton}
+                          onPress={() => playSong(item)}
+                          disabled={openingId === item.id}
+                        >
+                          {openingId === item.id ? (
+                            <ActivityIndicator color="#fff" />
+                          ) : (
+                            <Text style={styles.playText}>Play in App</Text>
+                          )}
+                        </TouchableOpacity>
+                      </MotiView>
+                    )}
+                  </AnimatePresence>
+                </View>
+              </TouchableOpacity>
+
+              {/* USER + TIME BELOW */}
+              <View style={styles.cardFooter}>
+                <TouchableOpacity onPress={() => openProfile(item.username)}>
+                  <Text style={styles.footerUsername}>@{item.username}</Text>
+                </TouchableOpacity>
+                <Text style={styles.footerTime}>{formatDate(item.createdAt)}</Text>
+              </View>
+            </View>
+          )}
+        />
+
+        {/* MINI‑PLAYER */}
+        {currentTrack && (
+          <Animated.View
+            style={[
+              styles.miniPlayer,
+              {
+                transform: [
+                  {
+                    translateY: miniPlayerAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [100, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            <Image source={{ uri: currentTrack.thumbnail }} style={styles.miniArt} />
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={styles.miniTitle} numberOfLines={1}>
+                {currentTrack.title}
+              </Text>
+              <Text style={styles.miniArtist} numberOfLines={1}>
+                {isPlaying ? 'Now playing' : 'Paused'} • {currentTrack.artist}
+              </Text>
+            </View>
+            <TouchableOpacity onPress={togglePlayPause}>
+              <Text style={styles.miniPlay}>{isPlaying ? 'Pause' : 'Play'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={closePlayer} style={{ marginLeft: 16 }}>
+              <Text style={styles.miniClose}>×</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        )}
+      </View>
+    </SafeAreaProvider>
   );
 }
 
-/* STYLES */
+/* ────── STYLES ────── */
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   loginBox: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
@@ -301,19 +322,22 @@ const styles = StyleSheet.create({
   postBtn: { backgroundColor: '#1DB954', padding: 12, borderRadius: 12, alignItems: 'center', marginTop: 8 },
   postBtnText: { color: '#fff', fontWeight: 'bold' },
   feed: { paddingHorizontal: 20, paddingBottom: 100 },
-  card: { marginBottom: 32, alignItems: 'center' },
+
+  cardContainer: { marginBottom: 32, alignItems: 'center' },
   flipWrapper: { width: CARD_WIDTH, height: CARD_WIDTH },
-  cardFront: { width: CARD_WIDTH, height: CARD_WIDTH, borderRadius: 16, overflow: 'hidden', backgroundColor: '#111', justifyContent: 'center', alignItems: 'center' },
+  cardFront: { width: CARD_WIDTH, height: CARD_WIDTH, borderRadius: 16, overflow: 'hidden', backgroundColor: '#111' },
   albumArtContainer: { width: CARD_WIDTH, height: CARD_WIDTH, overflow: 'hidden', borderRadius: 16 },
   albumArtCropped: { width: CARD_WIDTH * 1.78, height: CARD_WIDTH * 1.78, position: 'absolute', left: -CARD_WIDTH * 0.39, top: -CARD_WIDTH * 0.39 },
-  frontUsername: { position: 'absolute', bottom: 12, left: 12, color: '#1DB954', fontSize: 12, fontWeight: 'bold', backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
   cardBack: { width: CARD_WIDTH, height: CARD_WIDTH, backgroundColor: '#111', borderRadius: 16, padding: 16, justifyContent: 'center', alignItems: 'center' },
   backTitle: { color: '#fff', fontWeight: 'bold', fontSize: 14, textAlign: 'center', marginBottom: 6 },
   backArtist: { color: '#aaa', fontSize: 12, textAlign: 'center', marginBottom: 16 },
   playButton: { backgroundColor: '#1DB954', paddingHorizontal: 24, paddingVertical: 8, borderRadius: 20 },
   playText: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
 
-  // MINI-PLAYER
+  cardFooter: { marginTop: 8, flexDirection: 'row', justifyContent: 'space-between', width: CARD_WIDTH },
+  footerUsername: { color: '#1DB954', fontWeight: 'bold', fontSize: 13 },
+  footerTime: { color: '#666', fontSize: 12 },
+
   miniPlayer: {
     position: 'absolute',
     bottom: 0,
