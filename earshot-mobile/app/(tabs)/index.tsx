@@ -78,26 +78,50 @@ export default function HomeScreen() {
     };
     loadToken();
 
-    // Handle share intents (Android)
+    // Handle share intents (Android) - only check after a short delay to avoid false positives
     const handleShareIntent = async () => {
       try {
+        // Clear any stale pending URLs first
+        const staleUrl = await AsyncStorage.getItem('pendingShareUrl');
+        if (staleUrl) {
+          // Clear if it's invalid, our own scheme, or Expo dev URLs
+          if (!staleUrl.trim() || 
+              staleUrl.startsWith('earshotmobile://') ||
+              staleUrl.startsWith('exp://') ||
+              staleUrl.startsWith('exps://')) {
+            await AsyncStorage.removeItem('pendingShareUrl');
+            console.log('Cleared stale pending URL:', staleUrl);
+          }
+        }
+
+        // Small delay to ensure app is fully loaded
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
         // Check for pending share URL
         const pendingUrl = await AsyncStorage.getItem('pendingShareUrl');
-        if (pendingUrl) {
+        if (pendingUrl && pendingUrl.trim() && 
+            !pendingUrl.startsWith('earshotmobile://') &&
+            !pendingUrl.startsWith('exp://') &&
+            !pendingUrl.startsWith('exps://')) {
+          console.log('Processing pending share URL:', pendingUrl);
           await AsyncStorage.removeItem('pendingShareUrl');
           handleIncomingShare(pendingUrl);
           return;
         }
 
-        // Handle initial URL (app opened via share)
-        const initialUrl = await Linking.getInitialURL();
-        if (initialUrl) {
-          handleIncomingShare(initialUrl);
-        }
+        // Don't check initial URL here - _layout.tsx handles it and stores in AsyncStorage
+        // This avoids double-processing
 
         // Listen for URLs while app is running
         const subscription = Linking.addEventListener('url', (event) => {
-          handleIncomingShare(event.url);
+          // Only process if it's not our own deep link scheme or Expo dev URLs
+          if (event.url && event.url.trim() && 
+              !event.url.startsWith('earshotmobile://') &&
+              !event.url.startsWith('exp://') &&
+              !event.url.startsWith('exps://')) {
+            console.log('Received URL event:', event.url);
+            handleIncomingShare(event.url);
+          }
         });
 
         return () => {
@@ -113,17 +137,49 @@ export default function HomeScreen() {
 
   const handleIncomingShare = async (sharedData: string) => {
     try {
+      // Skip if no data or empty string
+      if (!sharedData || !sharedData.trim()) {
+        console.log('No share data received');
+        return;
+      }
+
+      // Skip if it's our own deep link scheme or Expo dev URLs
+      if (sharedData.startsWith('earshotmobile://') ||
+          sharedData.startsWith('exp://') ||
+          sharedData.startsWith('exps://')) {
+        console.log('Skipping own deep link scheme or Expo URL');
+        return;
+      }
+
       // Extract URL from shared text
       const extractedUrl = extractUrlFromText(sharedData);
-      if (!extractedUrl) {
+      if (!extractedUrl || !extractedUrl.trim()) {
         console.log('No URL found in shared data');
+        return;
+      }
+
+      // Skip if it's our own deep link scheme or Expo dev URLs (after extraction)
+      if (extractedUrl.startsWith('earshotmobile://') ||
+          extractedUrl.startsWith('exp://') ||
+          extractedUrl.startsWith('exps://')) {
+        console.log('Skipping own deep link scheme or Expo URL (extracted)');
         return;
       }
 
       // Parse and validate the URL
       const parsed = parseMusicUrl(extractedUrl);
       if (!parsed.isValid) {
-        Alert.alert('Invalid URL', 'Please share a valid Spotify, Apple Music, or YouTube link');
+        // Only show alert if we actually got a URL that's invalid AND it looks like a real URL attempt
+        // Don't show alert for empty/undefined URLs or our own scheme
+        const looksLikeUrl = extractedUrl.includes('://') || extractedUrl.includes('.') || extractedUrl.includes('/');
+        const isExpoUrl = extractedUrl.startsWith('exp://') || extractedUrl.startsWith('exps://');
+        if (extractedUrl && extractedUrl.trim().length > 0 && looksLikeUrl && 
+            !extractedUrl.startsWith('earshotmobile://') && !isExpoUrl) {
+          console.log('Invalid URL detected:', extractedUrl);
+          Alert.alert('Invalid URL', 'Please share a valid Spotify, Apple Music, or YouTube link');
+        } else {
+          console.log('Skipping invalid URL alert for:', extractedUrl);
+        }
         return;
       }
 

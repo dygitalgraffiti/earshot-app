@@ -14,6 +14,14 @@ export default function RootLayout() {
   // Handle deep links and share intents
   useEffect(() => {
     const handleIncomingUrl = async (url: string) => {
+      // Only store if it's a valid share URL (not our own deep link scheme or Expo dev URLs)
+      if (!url || !url.trim() || 
+          url.startsWith('earshotmobile://') || 
+          url.startsWith('exp://') ||
+          url.startsWith('exps://')) {
+        return;
+      }
+
       // Store the URL in AsyncStorage so index.tsx can pick it up
       try {
         const AsyncStorage = await import('@react-native-async-storage/async-storage');
@@ -23,16 +31,41 @@ export default function RootLayout() {
       }
     };
 
+    // Clear any stale pending URLs on app boot
+    const clearStaleUrls = async () => {
+      try {
+        const AsyncStorage = await import('@react-native-async-storage/async-storage');
+        const pending = await AsyncStorage.default.getItem('pendingShareUrl');
+        // Always clear on boot to prevent stale data
+        if (pending) {
+          console.log('Clearing stale pending URL on boot:', pending);
+          await AsyncStorage.default.removeItem('pendingShareUrl');
+        }
+      } catch (e) {
+        // Ignore errors
+        console.warn('Error clearing stale URLs:', e);
+      }
+    };
+    clearStaleUrls();
+
     // Handle initial URL (app opened via share intent)
     Linking.getInitialURL().then((url) => {
-      if (url) {
+      if (url && url.trim() && 
+          !url.startsWith('earshotmobile://') &&
+          !url.startsWith('exp://') &&
+          !url.startsWith('exps://')) {
         handleIncomingUrl(url);
       }
     });
 
     // Handle URLs while app is running
     const subscription = Linking.addEventListener('url', (event) => {
-      handleIncomingUrl(event.url);
+      if (event.url && event.url.trim() && 
+          !event.url.startsWith('earshotmobile://') &&
+          !event.url.startsWith('exp://') &&
+          !event.url.startsWith('exps://')) {
+        handleIncomingUrl(event.url);
+      }
     });
 
     return () => {
