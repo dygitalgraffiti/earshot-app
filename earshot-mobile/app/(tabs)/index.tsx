@@ -1,24 +1,23 @@
 // app/(tabs)/index.tsx
+import { extractUrlFromText, parseMusicUrl } from '@/utils/urlParser';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
-import { AnimatePresence, MotiView } from 'moti';
-import { useEffect, useRef, useState } from 'react';
+import * as Linking from 'expo-linking';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Animated,
   Dimensions,
   Image,
-  Linking,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Reanimated, {
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+import Animated, {
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
@@ -28,8 +27,7 @@ import Reanimated, {
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width, height } = Dimensions.get('window');
-const VINYL_SIZE = Math.min(width * 0.85, height * 0.5);
-const VINYL_CENTER_HOLE = VINYL_SIZE * 0.15;
+const VINYL_SIZE = width * 0.75;
 
 const API_URL = 'https://earshot-app.onrender.com';
 
@@ -52,34 +50,118 @@ export default function HomeScreen() {
   const [url, setUrl] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [flipped, setFlipped] = useState<Record<number, boolean>>({});
+  const [currentPostIndex, setCurrentPostIndex] = useState(0);
   const [openingId, setOpeningId] = useState<number | null>(null);
-  const [currentTrack, setCurrentTrack] = useState<Post | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const miniPlayerAnim = useRef(new Animated.Value(0)).current;
+  const [loading, setLoading] = useState(true);
 
-  // Animation values for vinyl stack
+  // Animation values
   const translateY = useSharedValue(0);
-  const rotation = useSharedValue(0);
+  const rotateZ = useSharedValue(0);
   const scale = useSharedValue(1);
   const opacity = useSharedValue(1);
 
-  /* ────── LOAD TOKEN ON MOUNT ────── */
+  // Load token on mount and handle share intents
   useEffect(() => {
-    const loadStoredToken = async () => {
+    const loadToken = async () => {
       try {
-        const storedToken = await AsyncStorage.getItem('auth_token');
-        if (storedToken) {
-          setToken(storedToken);
-          loadFeed(storedToken);
+        const savedToken = await AsyncStorage.getItem('authToken');
+        if (savedToken) {
+          setToken(savedToken);
+          await loadFeed(savedToken);
+        } else {
+          setLoading(false);
         }
       } catch (e) {
         console.warn('Failed to load token:', e);
+        setLoading(false);
       }
     };
-    loadStoredToken();
+    loadToken();
+
+    // Handle share intents (Android)
+    const handleShareIntent = async () => {
+      try {
+        // Check for pending share URL
+        const pendingUrl = await AsyncStorage.getItem('pendingShareUrl');
+        if (pendingUrl) {
+          await AsyncStorage.removeItem('pendingShareUrl');
+          handleIncomingShare(pendingUrl);
+          return;
+        }
+
+        // Handle initial URL (app opened via share)
+        const initialUrl = await Linking.getInitialURL();
+        if (initialUrl) {
+          handleIncomingShare(initialUrl);
+        }
+
+        // Listen for URLs while app is running
+        const subscription = Linking.addEventListener('url', (event) => {
+          handleIncomingShare(event.url);
+        });
+
+        return () => {
+          subscription.remove();
+        };
+      } catch (e) {
+        console.warn('Failed to handle share intent:', e);
+      }
+    };
+
+    handleShareIntent();
   }, []);
+
+  const handleIncomingShare = async (sharedData: string) => {
+    try {
+      // Extract URL from shared text
+      const extractedUrl = extractUrlFromText(sharedData);
+      if (!extractedUrl) {
+        console.log('No URL found in shared data');
+        return;
+      }
+
+      // Parse and validate the URL
+      const parsed = parseMusicUrl(extractedUrl);
+      if (!parsed.isValid) {
+        Alert.alert('Invalid URL', 'Please share a valid Spotify, Apple Music, or YouTube link');
+        return;
+      }
+
+      // Pre-fill the URL input
+      setUrl(parsed.url);
+      
+      // Optional: Auto-post if user is logged in
+      if (token) {
+        Alert.alert(
+          'Share to Earshot',
+          `Share "${parsed.platform}" track?`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Share',
+              onPress: async () => {
+                await postTrack();
+              },
+            },
+          ]
+        );
+      } else {
+        // If not logged in, just pre-fill the URL
+        Alert.alert('URL Ready', 'Log in to share this track');
+      }
+    } catch (e) {
+      console.error('Error handling share:', e);
+    }
+  };
+
+  const currentPost = feed[currentPostIndex];
+  const hasNext = currentPostIndex < feed.length - 1;
+  const hasPrevious = currentPostIndex > 0;
+
+  // Debug: Log when component renders
+  useEffect(() => {
+    console.log('HomeScreen rendered, feed length:', feed.length, 'currentIndex:', currentPostIndex);
+  }, [feed.length, currentPostIndex]);
 
   /* ────── AUTH ────── */
   const login = async () => {
@@ -96,8 +178,8 @@ export default function HomeScreen() {
       const data = await res.json();
       if (data.token) {
         setToken(data.token);
-        await AsyncStorage.setItem('auth_token', data.token);
-        loadFeed(data.token);
+        await AsyncStorage.setItem('authToken', data.token);
+        await loadFeed(data.token);
       } else {
         Alert.alert('Login Failed', data.error || 'Try again');
       }
@@ -108,15 +190,42 @@ export default function HomeScreen() {
 
   const loadFeed = async (t: string) => {
     try {
+      setLoading(true);
       const res = await fetch(`${API_URL}/api/feed`, {
         headers: { Authorization: `Bearer ${t}` },
       });
+      
+      if (!res.ok) {
+        console.error('Feed API error:', res.status, res.statusText);
+        if (res.status === 401) {
+          // Token expired, clear it
+          await AsyncStorage.removeItem('authToken');
+          setToken(null);
+          Alert.alert('Session Expired', 'Please log in again');
+          return;
+        }
+        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      }
+      
       const data = await res.json();
-      console.log('Feed loaded:', data.length, 'posts');
-      setFeed(data);
-      setCurrentIndex(0);
-    } catch {
-      Alert.alert('Feed Error', 'Could not load posts');
+      console.log('Feed API response:', data);
+      console.log('Feed type:', typeof data, 'Is array:', Array.isArray(data));
+      
+      if (Array.isArray(data)) {
+        console.log('Feed loaded:', data.length, 'posts');
+        setFeed(data);
+        setCurrentPostIndex(0);
+      } else {
+        console.error('Feed is not an array:', data);
+        setFeed([]);
+        Alert.alert('Feed Error', 'Invalid response from server');
+      }
+    } catch (e) {
+      console.error('Feed error:', e);
+      Alert.alert('Feed Error', `Could not load posts: ${e instanceof Error ? e.message : 'Unknown error'}`);
+      setFeed([]);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -142,38 +251,62 @@ export default function HomeScreen() {
     }
   };
 
-  const toggleFlip = (id: number) => {
-    setFlipped(prev => ({ ...prev, [id]: !prev[id] }));
-  };
-
   /* ────── NAVIGATION ────── */
   const goToNext = () => {
-    if (currentIndex < feed.length - 1) {
-      setCurrentIndex(prev => prev + 1);
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (hasNext) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      setCurrentPostIndex(prev => prev + 1);
+      translateY.value = 0;
+      rotateZ.value = 0;
+      scale.value = 1;
+      opacity.value = 1;
     }
   };
 
   const goToPrevious = () => {
-    if (currentIndex > 0) {
-      setCurrentIndex(prev => prev - 1);
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (hasPrevious) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      setCurrentPostIndex(prev => prev - 1);
+      translateY.value = 0;
+      rotateZ.value = 0;
+      scale.value = 1;
+      opacity.value = 1;
     }
   };
 
-  // Reset animation when index changes
-  useEffect(() => {
-    translateY.value = 0;
-    rotation.value = 0;
-    scale.value = 1;
-    opacity.value = 1;
-  }, [currentIndex]);
+  /* ────── GESTURES ────── */
+  const panGesture = Gesture.Pan()
+    .onUpdate(e => {
+      translateY.value = e.translationY;
+      rotateZ.value = e.translationX * 0.1;
+      scale.value = 1 - Math.abs(e.translationY) / 1000;
+      opacity.value = 1 - Math.abs(e.translationY) / 800;
+    })
+    .onEnd(e => {
+      const threshold = 100;
+      if (e.translationY > threshold && hasNext) {
+        translateY.value = withSpring(height);
+        rotateZ.value = withSpring(360);
+        opacity.value = withTiming(0);
+        runOnJS(goToNext)();
+      } else if (e.translationY < -threshold && hasPrevious) {
+        translateY.value = withSpring(-height);
+        rotateZ.value = withSpring(-360);
+        opacity.value = withTiming(0);
+        runOnJS(goToPrevious)();
+      } else {
+        translateY.value = withSpring(0);
+        rotateZ.value = withSpring(0);
+        scale.value = withSpring(1);
+        opacity.value = withSpring(1);
+      }
+    });
 
   /* ────── PLAY ────── */
   const playSong = async (post: Post) => {
     if (openingId === post.id) return;
     setOpeningId(post.id);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     let target = post.url;
     if (target.startsWith('spotify:')) {
@@ -182,30 +315,11 @@ export default function HomeScreen() {
 
     try {
       await Linking.openURL(target);
-      setCurrentTrack(post);
-      setIsPlaying(true);
-      Animated.timing(miniPlayerAnim, { toValue: 1, duration: 300, useNativeDriver: true }).start();
-
-      setTimeout(() => {
-        if (currentTrack?.id === post.id) closePlayer();
-      }, 30_000);
     } catch (e) {
       console.warn(e);
     } finally {
       setOpeningId(null);
     }
-  };
-
-  const togglePlayPause = () => {
-    setIsPlaying(p => !p);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  };
-
-  const closePlayer = () => {
-    Animated.timing(miniPlayerAnim, { toValue: 0, duration: 300, useNativeDriver: true }).start(() => {
-      setCurrentTrack(null);
-      setIsPlaying(false);
-    });
   };
 
   /* ────── PROFILE NAV ────── */
@@ -226,49 +340,15 @@ export default function HomeScreen() {
     return `${diff}d ago`;
   };
 
-  /* ────── GESTURE HANDLING ────── */
-  const panGesture = Gesture.Pan()
-    .onUpdate((e) => {
-      translateY.value = e.translationY;
-      // Add rotation based on horizontal movement for vinyl feel
-      rotation.value = e.translationX * 0.1;
-      // Scale down slightly when dragging
-      const absTranslation = Math.abs(e.translationY);
-      const maxTranslation = height * 0.3;
-      scale.value = absTranslation > maxTranslation ? 0.9 : 1 - (absTranslation / maxTranslation) * 0.1;
-    })
-    .onEnd((e) => {
-      const threshold = height * 0.15;
-      const velocity = e.velocityY;
-
-      if (e.translationY > threshold || velocity > 1000) {
-        // Swipe down - next record
-        translateY.value = withTiming(height, { duration: 300 });
-        opacity.value = withTiming(0, { duration: 300 });
-        runOnJS(goToNext)();
-      } else if (e.translationY < -threshold || velocity < -1000) {
-        // Swipe up - previous record
-        translateY.value = withTiming(-height, { duration: 300 });
-        opacity.value = withTiming(0, { duration: 300 });
-        runOnJS(goToPrevious)();
-      } else {
-        // Spring back to center
-        translateY.value = withSpring(0);
-        rotation.value = withSpring(0);
-        scale.value = withSpring(1);
-      }
-    });
-
-  const animatedCardStyle = useAnimatedStyle(() => {
-    return {
-      transform: [
-        { translateY: translateY.value },
-        { rotateZ: `${rotation.value}deg` },
-        { scale: scale.value },
-      ],
-      opacity: opacity.value,
-    };
-  });
+  /* ────── ANIMATED STYLES ────── */
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: translateY.value },
+      { rotateZ: `${rotateZ.value}deg` },
+      { scale: scale.value },
+    ],
+    opacity: opacity.value,
+  }));
 
   /* ────── UI ────── */
   if (!token) {
@@ -277,8 +357,22 @@ export default function HomeScreen() {
         <View style={styles.loginBox}>
           <Text style={styles.logo}>Earshot</Text>
           <Text style={styles.slogan}>Share music. Follow friends.</Text>
-          <TextInput placeholder="Username" value={username} onChangeText={setUsername} style={styles.input} autoCapitalize="none" />
-          <TextInput placeholder="Password" value={password} onChangeText={setPassword} secureTextEntry style={styles.input} />
+          <TextInput
+            placeholder="Username"
+            value={username}
+            onChangeText={setUsername}
+            style={styles.input}
+            autoCapitalize="none"
+            placeholderTextColor="#666"
+          />
+          <TextInput
+            placeholder="Password"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+            style={styles.input}
+            placeholderTextColor="#666"
+          />
           <TouchableOpacity style={styles.button} onPress={login}>
             <Text style={styles.buttonText}>LOGIN</Text>
           </TouchableOpacity>
@@ -287,389 +381,302 @@ export default function HomeScreen() {
     );
   }
 
-  const currentPost = feed[currentIndex];
-  const hasNext = currentIndex < feed.length - 1;
-  const hasPrevious = currentIndex > 0;
+  if (loading) {
+    return (
+      <SafeAreaProvider style={{ flex: 1, backgroundColor: '#000' }}>
+        <View style={styles.emptyContainer}>
+          <ActivityIndicator size="large" color="#1DB954" />
+          <Text style={styles.emptyText}>Loading...</Text>
+        </View>
+      </SafeAreaProvider>
+    );
+  }
 
-  // Debug logging
-  useEffect(() => {
-    console.log('=== FEED DEBUG ===');
-    console.log('Feed length:', feed.length);
-    console.log('Current index:', currentIndex);
-    console.log('Current post:', currentPost ? currentPost.title : 'NULL');
-    console.log('Has current post:', !!currentPost);
-    console.log('==================');
-  }, [feed, currentIndex, currentPost]);
+  if (!currentPost) {
+    return (
+      <SafeAreaProvider style={{ flex: 1, backgroundColor: '#000' }}>
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>
+            {feed.length === 0 ? 'No posts yet' : 'No post selected'}
+          </Text>
+          {feed.length > 0 && (
+            <Text style={[styles.emptyText, { fontSize: 12, marginTop: 8 }]}>
+              Feed has {feed.length} posts, but index {currentPostIndex} is out of range
+            </Text>
+          )}
+        </View>
+      </SafeAreaProvider>
+    );
+  }
 
-  return (
-    <SafeAreaProvider style={{ flex: 1, backgroundColor: '#000' }}>
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000' }}>
-        <Text style={{ color: '#1DB954', fontSize: 48, fontWeight: 'bold', marginBottom: 20 }}>
-          TEST - NEW CODE RUNNING
-        </Text>
-        <Text style={{ color: '#fff', fontSize: 24 }}>
-          If you see this, the file is working!
-        </Text>
-      </View>
-    </SafeAreaProvider>
-  );
-
-  // OLD CODE BELOW - COMMENTED OUT FOR TESTING
-  /*
   return (
     <SafeAreaProvider style={{ flex: 1, backgroundColor: '#000' }}>
       <View style={[styles.container, { paddingTop: insets.top }]}>
+        {/* Header */}
         <View style={styles.header}>
           <Text style={styles.logo}>Earshot</Text>
           <Text style={styles.slogan}>Share music. Follow friends.</Text>
-          <Text style={{ color: '#1DB954', fontSize: 24, fontWeight: 'bold', marginTop: 20 }}>
-            🔥 VINYL MODE ACTIVE 🔥
-          </Text>
         </View>
 
+        {/* Post Input */}
         <View style={styles.postBox}>
-          <TextInput placeholder="Paste YouTube/Spotify link..." value={url} onChangeText={setUrl} style={styles.input} />
+          <TextInput
+            placeholder="Paste YouTube/Spotify link..."
+            value={url}
+            onChangeText={setUrl}
+            style={styles.input}
+            placeholderTextColor="#666"
+          />
           <TouchableOpacity style={styles.postBtn} onPress={postTrack}>
             <Text style={styles.postBtnText}>POST</Text>
           </TouchableOpacity>
         </View>
 
-        {/* DEBUG: Always show this to confirm new code is running */}
-        <View style={{ padding: 10, backgroundColor: '#1DB954', margin: 10, borderRadius: 8 }}>
-          <Text style={{ color: '#000', fontWeight: 'bold', textAlign: 'center' }}>
-            NEW CODE VERSION - {feed.length} posts loaded
-          </Text>
-        </View>
-
-        {/* VINYL RECORD STACK */}
-        {(() => {
-          console.log('Rendering check:', { feedLength: feed.length, currentIndex, hasPost: !!currentPost });
-          return feed.length > 0 && currentPost;
-        })() ? (
+        {/* Vinyl Record Stack */}
+        <GestureHandlerRootView style={{ flex: 1 }}>
           <View style={styles.vinylContainer}>
-            <Text style={{ color: '#1DB954', fontSize: 20, marginBottom: 20 }}>VINYL MODE ACTIVE</Text>
-            {/* Next record preview (behind current) */}
-            {hasNext && feed[currentIndex + 1] && (
-              <View style={[styles.vinylStack, styles.vinylBehind]}>
-                <View style={styles.vinylRecord}>
-                  <Image
-                    source={{ uri: feed[currentIndex + 1].thumbnail }}
-                    style={styles.vinylImage}
-                  />
-                  <View style={styles.vinylCenterHole} />
-                </View>
-              </View>
-            )}
-
-            {/* Current record */}
             <GestureDetector gesture={panGesture}>
-              <Reanimated.View style={[styles.vinylStack, animatedCardStyle]}>
-                <TouchableOpacity
-                  onPress={() => toggleFlip(currentPost.id)}
-                  activeOpacity={0.95}
-                  style={styles.vinylTouchable}
-                >
-                  <View style={styles.vinylRecord}>
-                    <AnimatePresence>
-                      {!flipped[currentPost.id] ? (
-                        <MotiView
-                          key={`front-${currentPost.id}`}
-                          from={{ rotateY: '0deg' }}
-                          animate={{ rotateY: '0deg' }}
-                          exit={{ rotateY: '-90deg' }}
-                          transition={{ type: 'timing', duration: 300 }}
-                          style={styles.vinylFront}
-                        >
-                          <Image
-                            source={{ uri: currentPost.thumbnail }}
-                            style={styles.vinylImage}
-                          />
-                          <View style={styles.vinylCenterHole} />
-                          <View style={styles.vinylGrooves}>
-                            {[...Array(8)].map((_, i) => (
-                              <View
-                                key={i}
-                                style={[
-                                  styles.groove,
-                                  {
-                                    width: VINYL_SIZE * (0.3 + i * 0.05),
-                                    height: VINYL_SIZE * (0.3 + i * 0.05),
-                                  },
-                                ]}
-                              />
-                            ))}
-                          </View>
-                        </MotiView>
-                      ) : (
-                        <MotiView
-                          key={`back-${currentPost.id}`}
-                          from={{ rotateY: '90deg' }}
-                          animate={{ rotateY: '0deg' }}
-                          transition={{ type: 'timing', duration: 300 }}
-                          style={styles.vinylBack}
-                        >
-                          <View style={styles.vinylBackContent}>
-                            <Text style={styles.backTitle} numberOfLines={2}>
-                              {currentPost.title}
-                            </Text>
-                            <Text style={styles.backArtist}>{currentPost.artist}</Text>
-                            <TouchableOpacity
-                              style={styles.playButton}
-                              onPress={() => playSong(currentPost)}
-                              disabled={openingId === currentPost.id}
-                            >
-                              {openingId === currentPost.id ? (
-                                <ActivityIndicator color="#fff" />
-                              ) : (
-                                <Text style={styles.playText}>Play in App</Text>
-                              )}
-                            </TouchableOpacity>
-                          </View>
-                          <View style={styles.vinylCenterHole} />
-                        </MotiView>
-                      )}
-                    </AnimatePresence>
-                  </View>
+              <Animated.View style={[styles.vinylWrapper, animatedStyle]}>
+              {/* Vinyl Record */}
+              <View style={styles.vinyl}>
+                {/* Album Art Center */}
+                <View style={styles.vinylCenter}>
+                  <Image source={{ uri: currentPost.thumbnail }} style={styles.albumArt} resizeMode="cover" />
+                </View>
+
+                {/* Vinyl Grooves */}
+                <View style={styles.groove1} />
+                <View style={styles.groove2} />
+                <View style={styles.groove3} />
+
+                {/* Center Hole */}
+                <View style={styles.centerHole} />
+              </View>
+
+              {/* Info Overlay */}
+              <View style={styles.infoOverlay}>
+                <Text style={styles.title} numberOfLines={2}>
+                  {currentPost.title}
+                </Text>
+                <Text style={styles.artist} numberOfLines={1}>
+                  {currentPost.artist}
+                </Text>
+                <TouchableOpacity onPress={() => openProfile(currentPost.username)}>
+                  <Text style={styles.username}>@{currentPost.username}</Text>
                 </TouchableOpacity>
-
-                {/* USER + TIME BELOW */}
-                <View style={styles.cardFooter}>
-                  <TouchableOpacity onPress={() => openProfile(currentPost.username)}>
-                    <Text style={styles.footerUsername}>@{currentPost.username}</Text>
-                  </TouchableOpacity>
-                  <Text style={styles.footerTime}>{formatDate(currentPost.createdAt)}</Text>
-                </View>
-
-                {/* Swipe hints */}
-                <View style={styles.swipeHints}>
-                  {hasPrevious && (
-                    <View style={styles.swipeHint}>
-                      <Text style={styles.swipeHintText}>↑ Previous</Text>
-                    </View>
+                <TouchableOpacity
+                  style={styles.playButton}
+                  onPress={() => playSong(currentPost)}
+                  disabled={openingId === currentPost.id}
+                >
+                  {openingId === currentPost.id ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.playText}>▶ Play</Text>
                   )}
-                  {hasNext && (
-                    <View style={styles.swipeHint}>
-                      <Text style={styles.swipeHintText}>↓ Next</Text>
-                    </View>
-                  )}
-                </View>
-              </Reanimated.View>
+                </TouchableOpacity>
+              </View>
+              </Animated.View>
             </GestureDetector>
-
-            {/* Progress indicator */}
-            <View style={styles.progressContainer}>
-              <Text style={styles.progressText}>
-                {currentIndex + 1} / {feed.length}
-              </Text>
-            </View>
           </View>
-        ) : (
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No posts yet</Text>
-          </View>
-        )}
+        </GestureHandlerRootView>
 
-        {/* MINI‑PLAYER */}
-        {currentTrack && (
-          <Animated.View
-            style={[
-              styles.miniPlayer,
-              {
-                transform: [
-                  {
-                    translateY: miniPlayerAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [100, 0],
-                    }),
-                  },
-                ],
-              },
-            ]}
-          >
-            <Image source={{ uri: currentTrack.thumbnail }} style={styles.miniArt} />
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={styles.miniTitle} numberOfLines={1}>
-                {currentTrack.title}
-              </Text>
-              <Text style={styles.miniArtist} numberOfLines={1}>
-                {isPlaying ? 'Now playing' : 'Paused'} • {currentTrack.artist}
-              </Text>
-            </View>
-            <TouchableOpacity onPress={togglePlayPause}>
-              <Text style={styles.miniPlay}>{isPlaying ? 'Pause' : 'Play'}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={closePlayer} style={{ marginLeft: 16 }}>
-              <Text style={styles.miniClose}>×</Text>
-            </TouchableOpacity>
-          </Animated.View>
+        {/* Swipe Hint */}
+        {hasNext && (
+          <View style={styles.footer}>
+            <Text style={styles.progress}>↓ Swipe for next</Text>
+          </View>
         )}
       </View>
     </SafeAreaProvider>
   );
-  */
 }
 
 /* ────── STYLES ────── */
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000' },
-  loginBox: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
-  logo: { fontSize: 48, fontWeight: 'bold', color: '#1DB954', textAlign: 'center', marginBottom: 8 },
-  slogan: { fontSize: 14, color: '#888', textAlign: 'center', marginBottom: 40 },
-  input: { backgroundColor: '#222', color: '#fff', width: '100%', padding: 16, borderRadius: 12, marginBottom: 16, fontSize: 16 },
-  button: { backgroundColor: '#1DB954', width: '100%', padding: 16, borderRadius: 12, alignItems: 'center' },
-  buttonText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
-  header: { padding: 20, alignItems: 'center' },
-  postBox: { paddingHorizontal: 20, marginBottom: 16 },
-  postBtn: { backgroundColor: '#1DB954', padding: 12, borderRadius: 12, alignItems: 'center', marginTop: 8 },
-  postBtnText: { color: '#fff', fontWeight: 'bold' },
-
-  // Vinyl stack styles
-  vinylContainer: {
+  container: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 20,
-  },
-  vinylStack: {
-    width: VINYL_SIZE,
-    height: VINYL_SIZE,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  vinylBehind: {
-    position: 'absolute',
-    opacity: 0.3,
-    transform: [{ scale: 0.95 }, { translateY: 20 }],
-    zIndex: 0,
-  },
-  vinylTouchable: {
-    width: '100%',
-    height: '100%',
-  },
-  vinylRecord: {
-    width: VINYL_SIZE,
-    height: VINYL_SIZE,
-    borderRadius: VINYL_SIZE / 2,
-    backgroundColor: '#111',
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.5,
-    shadowRadius: 20,
-    elevation: 10,
-  },
-  vinylFront: {
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  vinylBack: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: '#111',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  vinylImage: {
-    width: VINYL_SIZE,
-    height: VINYL_SIZE,
-    borderRadius: VINYL_SIZE / 2,
-  },
-  vinylCenterHole: {
-    position: 'absolute',
-    width: VINYL_CENTER_HOLE,
-    height: VINYL_CENTER_HOLE,
-    borderRadius: VINYL_CENTER_HOLE / 2,
     backgroundColor: '#000',
-    zIndex: 10,
-    borderWidth: 2,
-    borderColor: '#333',
   },
-  vinylGrooves: {
-    position: 'absolute',
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  groove: {
-    position: 'absolute',
-    borderRadius: 1000,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
-  },
-  vinylBackContent: {
-    padding: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
+  loginBox: {
     flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
   },
-  backTitle: {
-    color: '#fff',
+  logo: {
+    fontSize: 42,
     fontWeight: 'bold',
-    fontSize: 18,
+    color: '#1DB954',
     textAlign: 'center',
     marginBottom: 8,
   },
-  backArtist: {
-    color: '#aaa',
+  slogan: {
     fontSize: 14,
+    color: '#888',
     textAlign: 'center',
-    marginBottom: 20,
+    marginBottom: 40,
   },
-  playButton: {
+  input: {
+    backgroundColor: '#222',
+    color: '#fff',
+    width: '100%',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+    fontSize: 16,
+  },
+  button: {
     backgroundColor: '#1DB954',
-    paddingHorizontal: 32,
-    paddingVertical: 12,
-    borderRadius: 24,
+    width: '100%',
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
   },
-  playText: {
+  buttonText: {
     color: '#fff',
     fontWeight: 'bold',
     fontSize: 16,
   },
-
-  cardFooter: {
-    marginTop: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  header: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 4,
+    alignItems: 'center',
+  },
+  postBox: {
+    paddingHorizontal: 20,
+    marginBottom: 12,
+  },
+  postBtn: {
+    backgroundColor: '#1DB954',
+    padding: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  postBtnText: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+  vinylContainer: {
+    flex: 1,
+    justifyContent: 'flex-start',
+    alignItems: 'center',
+    paddingTop: 10,
+    paddingBottom: 20,
+  },
+  vinylWrapper: {
     width: VINYL_SIZE,
+    height: VINYL_SIZE,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  vinyl: {
+    width: VINYL_SIZE,
+    height: VINYL_SIZE,
+    borderRadius: VINYL_SIZE / 2,
+    backgroundColor: '#111',
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+    borderWidth: 2,
+    borderColor: '#333',
+  },
+  vinylCenter: {
+    width: VINYL_SIZE * 0.85,
+    height: VINYL_SIZE * 0.85,
+    borderRadius: (VINYL_SIZE * 0.85) / 2,
+    overflow: 'hidden',
+    backgroundColor: '#000',
+    borderWidth: 3,
+    borderColor: '#1DB954',
+  },
+  albumArt: {
+    width: '100%',
+    height: '100%',
+  },
+  groove1: {
+    position: 'absolute',
+    width: VINYL_SIZE * 0.7,
+    height: VINYL_SIZE * 0.7,
+    borderRadius: (VINYL_SIZE * 0.7) / 2,
+    borderWidth: 1,
+    borderColor: '#222',
+  },
+  groove2: {
+    position: 'absolute',
+    width: VINYL_SIZE * 0.85,
+    height: VINYL_SIZE * 0.85,
+    borderRadius: (VINYL_SIZE * 0.85) / 2,
+    borderWidth: 1,
+    borderColor: '#222',
+  },
+  groove3: {
+    position: 'absolute',
+    width: VINYL_SIZE * 0.95,
+    height: VINYL_SIZE * 0.95,
+    borderRadius: (VINYL_SIZE * 0.95) / 2,
+    borderWidth: 1,
+    borderColor: '#222',
+  },
+  centerHole: {
+    position: 'absolute',
+    width: VINYL_SIZE * 0.08,
+    height: VINYL_SIZE * 0.08,
+    borderRadius: (VINYL_SIZE * 0.08) / 2,
+    backgroundColor: '#000',
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  infoOverlay: {
+    position: 'absolute',
+    bottom: -140,
+    width: '100%',
+    alignItems: 'center',
     paddingHorizontal: 20,
   },
-  footerUsername: {
+  title: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  artist: {
+    color: '#aaa',
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  username: {
     color: '#1DB954',
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: 14,
+  },
+  playButton: {
+    backgroundColor: '#1DB954',
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    borderRadius: 20,
+  },
+  playText: {
+    color: '#fff',
     fontWeight: 'bold',
     fontSize: 14,
   },
-  footerTime: {
+  footer: {
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: 10,
+    alignItems: 'center',
+  },
+  progress: {
     color: '#666',
     fontSize: 12,
   },
-
-  swipeHints: {
-    marginTop: 12,
-    alignItems: 'center',
-  },
-  swipeHint: {
-    marginVertical: 4,
-  },
-  swipeHintText: {
-    color: '#444',
-    fontSize: 11,
-    fontWeight: '500',
-  },
-
-  progressContainer: {
-    marginTop: 20,
-    alignItems: 'center',
-  },
-  progressText: {
-    color: '#666',
-    fontSize: 12,
-    fontWeight: '500',
-  },
-
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -679,23 +686,4 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 16,
   },
-
-  miniPlayer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 72,
-    backgroundColor: '#111',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    borderTopWidth: 1,
-    borderColor: '#333',
-  },
-  miniArt: { width: 48, height: 48, borderRadius: 8 },
-  miniTitle: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
-  miniArtist: { color: '#aaa', fontSize: 12 },
-  miniPlay: { color: '#1DB954', fontWeight: 'bold', fontSize: 16 },
-  miniClose: { color: '#fff', fontSize: 24 },
 });

@@ -1,33 +1,75 @@
-import { Tabs } from 'expo-router';
-import { MaterialIcons } from '@expo/vector-icons';
+// app/_layout.tsx
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import * as Linking from 'expo-linking';
+import { Stack } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import { useEffect } from 'react';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import 'react-native-reanimated';
 
-export default function TabsLayout() {
+export default function RootLayout() {
+  const colorScheme = useColorScheme();
+
+  // Handle deep links and share intents
+  useEffect(() => {
+    const handleIncomingUrl = async (url: string) => {
+      // Store the URL in AsyncStorage so index.tsx can pick it up
+      try {
+        const AsyncStorage = await import('@react-native-async-storage/async-storage');
+        await AsyncStorage.default.setItem('pendingShareUrl', url);
+      } catch (e) {
+        console.warn('Failed to store pending URL:', e);
+      }
+    };
+
+    // Handle initial URL (app opened via share intent)
+    Linking.getInitialURL().then((url) => {
+      if (url) {
+        handleIncomingUrl(url);
+      }
+    });
+
+    // Handle URLs while app is running
+    const subscription = Linking.addEventListener('url', (event) => {
+      handleIncomingUrl(event.url);
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
+
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: '#1DB954',
-        tabBarInactiveTintColor: '#666',
-        tabBarStyle: {
-          backgroundColor: '#000',
-          borderTopColor: '#222',
-        },
-      }}
-    >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Feed',
-          tabBarIcon: ({ color, size }) => <MaterialIcons name="home" size={size} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="explore"
-        options={{
-          title: 'Explore',
-          tabBarIcon: ({ color, size }) => <MaterialIcons name="explore" size={size} color={color} />,
-        }}
-      />
-    </Tabs>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+        <Stack screenOptions={{ headerShown: false }}>
+          {/* Main tab navigator - only this should show tabs */}
+          <Stack.Screen name="(tabs)" />
+
+          {/* Profile – reachable from feed, NOT in tab bar */}
+          <Stack.Screen
+            name="ProfileScreen"
+            options={{
+              headerShown: true,
+              title: 'Profile',
+              headerStyle: { backgroundColor: '#000' },
+              headerTintColor: '#1DB954',
+              headerTitleStyle: { fontWeight: 'bold' },
+            }}
+          />
+
+          {/* Modal - NOT in tab bar */}
+          <Stack.Screen 
+            name="modal" 
+            options={{ 
+              presentation: 'modal',
+              headerShown: false,
+            }} 
+          />
+        </Stack>
+        <StatusBar style="auto" />
+      </ThemeProvider>
+    </GestureHandlerRootView>
   );
 }
