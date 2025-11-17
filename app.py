@@ -12,7 +12,7 @@ from flask import (
     url_for, flash, jsonify, abort, Response
 )
 from flask_jwt_extended import (
-    JWTManager, create_access_token, jwt_required, get_jwt_identity
+    JWTManager, create_access_token, jwt_required, get_jwt_identity, verify_jwt_in_request
 )
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
@@ -268,6 +268,24 @@ def api_profile(username):
     user = User.query.filter(func.lower(User.username) == username.lower()).first_or_404()
     posts = Post.query.filter_by(user_id=user.id).order_by(Post.timestamp.desc()).all()
 
+    # Check if user is authenticated and get follow status
+    is_following = False
+    is_own_profile = False
+    try:
+        verify_jwt_in_request(optional=True)
+        current_user_id = get_jwt_identity()
+        if current_user_id:
+            try:
+                current_user = User.query.get(int(current_user_id))
+                if current_user:
+                    is_own_profile = current_user.id == user.id
+                    if not is_own_profile:
+                        is_following = current_user.is_following(user)
+            except (ValueError, TypeError):
+                pass  # Invalid user ID
+    except:
+        pass  # Not authenticated or invalid token
+
     return jsonify({
         'user': {
             'id': user.id,
@@ -275,6 +293,8 @@ def api_profile(username):
             'twitter': user.twitter or '',
             'followers': user.followers.count(),
             'following': user.following.count(),
+            'is_following': is_following,
+            'is_own_profile': is_own_profile,
         },
         'posts': [{
             'id': p.id,
@@ -289,7 +309,7 @@ def api_profile(username):
 @app.route('/api/follow/<int:user_id>', methods=['POST'])
 @jwt_required()
 def api_follow(user_id):
-    current_user = User.query.get(get_jwt_identity())
+    current_user = User.query.get(int(get_jwt_identity()))
     target = User.query.get_or_404(user_id)
     if current_user.id == target.id:
         return jsonify({'error': 'Cannot follow self'}), 400
@@ -302,7 +322,24 @@ def api_follow(user_id):
         action = 'followed'
     db.session.commit()
 
-    return jsonify({'action': action, 'followers': target.followers.count()})
+    return jsonify({'action': action, 'followers': target.followers.count(), 'is_following': action == 'followed'})
+
+@app.route('/api/profile/twitter', methods=['PUT'])
+@jwt_required()
+def api_update_twitter():
+    current_user = User.query.get(int(get_jwt_identity()))
+    data = request.get_json()
+    twitter_handle = data.get('twitter', '').strip()
+    
+    # Remove @ if present and validate
+    twitter_handle = twitter_handle.lstrip('@')
+    if twitter_handle and len(twitter_handle) > 100:
+        return jsonify({'error': 'Twitter handle too long'}), 400
+    
+    current_user.twitter = twitter_handle if twitter_handle else None
+    db.session.commit()
+    
+    return jsonify({'success': True, 'twitter': current_user.twitter or ''})
 
 # ---------- RUN ----------
 if __name__ == '__main__':

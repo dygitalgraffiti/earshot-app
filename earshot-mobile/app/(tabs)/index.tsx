@@ -18,6 +18,7 @@ import { MotiView, AnimatePresence } from 'moti';
 import * as Haptics from 'expo-haptics';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = width * 0.42;
@@ -50,6 +51,22 @@ export default function HomeScreen() {
   const flatListRef = useRef<FlatList>(null);
   const miniPlayerAnim = useRef(new Animated.Value(0)).current;
 
+  /* ────── LOAD TOKEN ON MOUNT ────── */
+  useEffect(() => {
+    const loadStoredToken = async () => {
+      try {
+        const storedToken = await AsyncStorage.getItem('auth_token');
+        if (storedToken) {
+          setToken(storedToken);
+          loadFeed(storedToken);
+        }
+      } catch (e) {
+        console.warn('Failed to load token:', e);
+      }
+    };
+    loadStoredToken();
+  }, []);
+
   /* ────── AUTH ────── */
   const login = async () => {
     if (!username || !password) {
@@ -65,6 +82,7 @@ export default function HomeScreen() {
       const data = await res.json();
       if (data.token) {
         setToken(data.token);
+        await AsyncStorage.setItem('auth_token', data.token);
         loadFeed(data.token);
       } else {
         Alert.alert('Login Failed', data.error || 'Try again');
