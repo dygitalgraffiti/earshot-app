@@ -1,39 +1,33 @@
-// app/_layout.tsx
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import 'react-native-reanimated';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { Tabs } from 'expo-router';
+import { MaterialIcons } from '@expo/vector-icons';
 
-export const unstable_settings = {
-  anchor: '(tabs)',
-};
-
-export default function RootLayout() {
-  const colorScheme = useColorScheme();
-
+export default function TabsLayout() {
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        {/* Main tab navigator */}
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-
-        {/* Profile – reachable from feed */}
-        <Stack.Screen
-          name="ProfileScreen"
-          options={{
-            headerShown: true,
-            title: 'Profile',
-            headerStyle: { backgroundColor: '#000' },
-            headerTintColor: '#1DB954',
-            headerTitleStyle: { fontWeight: 'bold' },
-          }}
-        />
-
-        {/* Modal */}
-        <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-      </Stack>
-      <StatusBar style="auto" />
-    </ThemeProvider>
+    <Tabs
+      screenOptions={{
+        headerShown: false,
+        tabBarActiveTintColor: '#1DB954',
+        tabBarInactiveTintColor: '#666',
+        tabBarStyle: {
+          backgroundColor: '#000',
+          borderTopColor: '#222',
+        },
+      }}
+    >
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: 'Feed',
+          tabBarIcon: ({ color, size }) => <MaterialIcons name="home" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="explore"
+        options={{
+          title: 'Explore',
+          tabBarIcon: ({ color, size }) => <MaterialIcons name="explore" size={size} color={color} />,
+        }}
+      />
+    </Tabs>
   );
 }
