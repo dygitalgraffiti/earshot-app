@@ -15,7 +15,22 @@ export default function RootLayout() {
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <Stack>
+        {/* Main tab navigator */}
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+
+        {/* Hidden screens (not in tab bar) */}
+        <Stack.Screen
+          name="ProfileScreen"
+          options={{
+            headerShown: true,
+            title: 'Profile',
+            headerStyle: { backgroundColor: '#000' },
+            headerTintColor: '#1DB954',
+            headerTitleStyle: { fontWeight: 'bold' },
+          }}
+        />
+
+        {/* Modal */}
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
       </Stack>
       <StatusBar style="auto" />
