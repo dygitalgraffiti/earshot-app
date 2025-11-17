@@ -293,11 +293,12 @@ export default function HomeScreen() {
 
   // Debug logging
   useEffect(() => {
-    console.log('Feed state:', {
-      feedLength: feed.length,
-      currentIndex,
-      hasCurrentPost: !!currentPost,
-    });
+    console.log('=== FEED DEBUG ===');
+    console.log('Feed length:', feed.length);
+    console.log('Current index:', currentIndex);
+    console.log('Current post:', currentPost ? currentPost.title : 'NULL');
+    console.log('Has current post:', !!currentPost);
+    console.log('==================');
   }, [feed, currentIndex, currentPost]);
 
   return (
@@ -315,9 +316,20 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* DEBUG: Always show this to confirm new code is running */}
+        <View style={{ padding: 10, backgroundColor: '#1DB954', margin: 10, borderRadius: 8 }}>
+          <Text style={{ color: '#000', fontWeight: 'bold', textAlign: 'center' }}>
+            NEW CODE VERSION - {feed.length} posts loaded
+          </Text>
+        </View>
+
         {/* VINYL RECORD STACK */}
-        {feed.length > 0 && currentPost ? (
+        {(() => {
+          console.log('Rendering check:', { feedLength: feed.length, currentIndex, hasPost: !!currentPost });
+          return feed.length > 0 && currentPost;
+        })() ? (
           <View style={styles.vinylContainer}>
+            <Text style={{ color: '#1DB954', fontSize: 20, marginBottom: 20 }}>VINYL MODE ACTIVE</Text>
             {/* Next record preview (behind current) */}
             {hasNext && feed[currentIndex + 1] && (
               <View style={[styles.vinylStack, styles.vinylBehind]}>
