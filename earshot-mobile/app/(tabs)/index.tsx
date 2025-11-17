@@ -43,7 +43,7 @@ interface Post {
   createdAt: string;
 }
 
-export default function HomeScreen() { // VINYL
+export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
 
@@ -302,12 +302,211 @@ export default function HomeScreen() { // VINYL
   }, [feed, currentIndex, currentPost]);
 
   return (
-  <SafeAreaProvider style={{ flex: 1, backgroundColor: '#000' }}>
-    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-      <Text style={{ color: '#1DB954', fontSize: 48 }}>TEST - NEW CODE</Text>
-    </View>
-  </SafeAreaProvider>
-);
+    <SafeAreaProvider style={{ flex: 1, backgroundColor: '#000' }}>
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000' }}>
+        <Text style={{ color: '#1DB954', fontSize: 48, fontWeight: 'bold', marginBottom: 20 }}>
+          TEST - NEW CODE RUNNING
+        </Text>
+        <Text style={{ color: '#fff', fontSize: 24 }}>
+          If you see this, the file is working!
+        </Text>
+      </View>
+    </SafeAreaProvider>
+  );
+
+  // OLD CODE BELOW - COMMENTED OUT FOR TESTING
+  /*
+  return (
+    <SafeAreaProvider style={{ flex: 1, backgroundColor: '#000' }}>
+      <View style={[styles.container, { paddingTop: insets.top }]}>
+        <View style={styles.header}>
+          <Text style={styles.logo}>Earshot</Text>
+          <Text style={styles.slogan}>Share music. Follow friends.</Text>
+          <Text style={{ color: '#1DB954', fontSize: 24, fontWeight: 'bold', marginTop: 20 }}>
+            🔥 VINYL MODE ACTIVE 🔥
+          </Text>
+        </View>
+
+        <View style={styles.postBox}>
+          <TextInput placeholder="Paste YouTube/Spotify link..." value={url} onChangeText={setUrl} style={styles.input} />
+          <TouchableOpacity style={styles.postBtn} onPress={postTrack}>
+            <Text style={styles.postBtnText}>POST</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* DEBUG: Always show this to confirm new code is running */}
+        <View style={{ padding: 10, backgroundColor: '#1DB954', margin: 10, borderRadius: 8 }}>
+          <Text style={{ color: '#000', fontWeight: 'bold', textAlign: 'center' }}>
+            NEW CODE VERSION - {feed.length} posts loaded
+          </Text>
+        </View>
+
+        {/* VINYL RECORD STACK */}
+        {(() => {
+          console.log('Rendering check:', { feedLength: feed.length, currentIndex, hasPost: !!currentPost });
+          return feed.length > 0 && currentPost;
+        })() ? (
+          <View style={styles.vinylContainer}>
+            <Text style={{ color: '#1DB954', fontSize: 20, marginBottom: 20 }}>VINYL MODE ACTIVE</Text>
+            {/* Next record preview (behind current) */}
+            {hasNext && feed[currentIndex + 1] && (
+              <View style={[styles.vinylStack, styles.vinylBehind]}>
+                <View style={styles.vinylRecord}>
+                  <Image
+                    source={{ uri: feed[currentIndex + 1].thumbnail }}
+                    style={styles.vinylImage}
+                  />
+                  <View style={styles.vinylCenterHole} />
+                </View>
+              </View>
+            )}
+
+            {/* Current record */}
+            <GestureDetector gesture={panGesture}>
+              <Reanimated.View style={[styles.vinylStack, animatedCardStyle]}>
+                <TouchableOpacity
+                  onPress={() => toggleFlip(currentPost.id)}
+                  activeOpacity={0.95}
+                  style={styles.vinylTouchable}
+                >
+                  <View style={styles.vinylRecord}>
+                    <AnimatePresence>
+                      {!flipped[currentPost.id] ? (
+                        <MotiView
+                          key={`front-${currentPost.id}`}
+                          from={{ rotateY: '0deg' }}
+                          animate={{ rotateY: '0deg' }}
+                          exit={{ rotateY: '-90deg' }}
+                          transition={{ type: 'timing', duration: 300 }}
+                          style={styles.vinylFront}
+                        >
+                          <Image
+                            source={{ uri: currentPost.thumbnail }}
+                            style={styles.vinylImage}
+                          />
+                          <View style={styles.vinylCenterHole} />
+                          <View style={styles.vinylGrooves}>
+                            {[...Array(8)].map((_, i) => (
+                              <View
+                                key={i}
+                                style={[
+                                  styles.groove,
+                                  {
+                                    width: VINYL_SIZE * (0.3 + i * 0.05),
+                                    height: VINYL_SIZE * (0.3 + i * 0.05),
+                                  },
+                                ]}
+                              />
+                            ))}
+                          </View>
+                        </MotiView>
+                      ) : (
+                        <MotiView
+                          key={`back-${currentPost.id}`}
+                          from={{ rotateY: '90deg' }}
+                          animate={{ rotateY: '0deg' }}
+                          transition={{ type: 'timing', duration: 300 }}
+                          style={styles.vinylBack}
+                        >
+                          <View style={styles.vinylBackContent}>
+                            <Text style={styles.backTitle} numberOfLines={2}>
+                              {currentPost.title}
+                            </Text>
+                            <Text style={styles.backArtist}>{currentPost.artist}</Text>
+                            <TouchableOpacity
+                              style={styles.playButton}
+                              onPress={() => playSong(currentPost)}
+                              disabled={openingId === currentPost.id}
+                            >
+                              {openingId === currentPost.id ? (
+                                <ActivityIndicator color="#fff" />
+                              ) : (
+                                <Text style={styles.playText}>Play in App</Text>
+                              )}
+                            </TouchableOpacity>
+                          </View>
+                          <View style={styles.vinylCenterHole} />
+                        </MotiView>
+                      )}
+                    </AnimatePresence>
+                  </View>
+                </TouchableOpacity>
+
+                {/* USER + TIME BELOW */}
+                <View style={styles.cardFooter}>
+                  <TouchableOpacity onPress={() => openProfile(currentPost.username)}>
+                    <Text style={styles.footerUsername}>@{currentPost.username}</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.footerTime}>{formatDate(currentPost.createdAt)}</Text>
+                </View>
+
+                {/* Swipe hints */}
+                <View style={styles.swipeHints}>
+                  {hasPrevious && (
+                    <View style={styles.swipeHint}>
+                      <Text style={styles.swipeHintText}>↑ Previous</Text>
+                    </View>
+                  )}
+                  {hasNext && (
+                    <View style={styles.swipeHint}>
+                      <Text style={styles.swipeHintText}>↓ Next</Text>
+                    </View>
+                  )}
+                </View>
+              </Reanimated.View>
+            </GestureDetector>
+
+            {/* Progress indicator */}
+            <View style={styles.progressContainer}>
+              <Text style={styles.progressText}>
+                {currentIndex + 1} / {feed.length}
+              </Text>
+            </View>
+          </View>
+        ) : (
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyText}>No posts yet</Text>
+          </View>
+        )}
+
+        {/* MINI‑PLAYER */}
+        {currentTrack && (
+          <Animated.View
+            style={[
+              styles.miniPlayer,
+              {
+                transform: [
+                  {
+                    translateY: miniPlayerAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [100, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            <Image source={{ uri: currentTrack.thumbnail }} style={styles.miniArt} />
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={styles.miniTitle} numberOfLines={1}>
+                {currentTrack.title}
+              </Text>
+              <Text style={styles.miniArtist} numberOfLines={1}>
+                {isPlaying ? 'Now playing' : 'Paused'} • {currentTrack.artist}
+              </Text>
+            </View>
+            <TouchableOpacity onPress={togglePlayPause}>
+              <Text style={styles.miniPlay}>{isPlaying ? 'Pause' : 'Play'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={closePlayer} style={{ marginLeft: 16 }}>
+              <Text style={styles.miniClose}>×</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        )}
+      </View>
+    </SafeAreaProvider>
+  );
+  */
 }
 
 /* ────── STYLES ────── */
