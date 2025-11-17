@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Text,
   View,
@@ -11,9 +11,9 @@ import {
   Alert,
   Dimensions,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { MotiView, AnimatePresence } from 'moti';
-import { WebView } from 'react-native-webview';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = width * 0.85;
@@ -26,7 +26,7 @@ interface Post {
   artist: string;
   thumbnail: string;
   username: string;
-  url: string;
+  url: string;               // YouTube or Spotify link
 }
 
 export default function HomeScreen() {
@@ -36,9 +36,9 @@ export default function HomeScreen() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [flipped, setFlipped] = useState<Record<number, boolean>>({});
-  const [playingId, setPlayingId] = useState<number | null>(null);
-  const [playerUrl, setPlayerUrl] = useState<string | null>(null);
+  const [openingId, setOpeningId] = useState<number | null>(null); // UI feedback
 
+  /* --------------------------------------------------- AUTH --------------------------------------------------- */
   const login = async () => {
     if (!username || !password) {
       Alert.alert('Missing', 'Please fill in both fields');
@@ -100,30 +100,39 @@ export default function HomeScreen() {
     setFlipped(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  /* PLAY SONG – YouTube iframe (instant, reliable) */
-  const playSong = (post: Post) => {
-    if (playingId === post.id) {
-      setPlayingId(null);
-      setPlayerUrl(null);
-      return;
+  /* --------------------------------------------------- PLAY --------------------------------------------------- */
+  const playSong = async (post: Post) => {
+    if (openingId === post.id) return; // already handling
+
+    setOpeningId(post.id);
+
+    let target = post.url;
+
+    // Spotify URI → web URL (so browser fallback works)
+    if (target.startsWith('spotify:')) {
+      target = target.replace('spotify:', 'https://open.spotify.com/');
     }
 
-    const videoId = post.url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)/)?.[1];
-    if (!videoId) {
-      Alert.alert('Invalid URL', 'Not a YouTube link');
-      return;
+    try {
+      const canOpen = await Linking.canOpenURL(target);
+      await Linking.openURL(target);               // opens native app **or** browser
+    } catch (err) {
+      console.warn('Linking error:', err);
+      // Fallback – force browser
+      await Linking.openURL(target);
+    } finally {
+      setOpeningId(null);
     }
-
-    setPlayerUrl(`https://www.youtube.com/embed/${videoId}?autoplay=1&playsinline=1&modestbranding=1`);
-    setPlayingId(post.id);
   };
 
+  /* --------------------------------------------------- UI --------------------------------------------------- */
   if (!token) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loginBox}>
           <Text style={styles.logo}>Earshot</Text>
-          <Text style={styles.slogan}>Share music. Follow friends.</Text>
+          <Text style={styles.slogan}>Share music.. Follow friends.</Text>
+
           <TextInput
             placeholder="Username"
             value={username}
@@ -138,6 +147,7 @@ export default function HomeScreen() {
             secureTextEntry
             style={styles.input}
           />
+
           <TouchableOpacity style={styles.button} onPress={login}>
             <Text style={styles.buttonText}>LOGIN</Text>
           </TouchableOpacity>
@@ -203,10 +213,13 @@ export default function HomeScreen() {
                       <TouchableOpacity
                         style={styles.playButton}
                         onPress={() => playSong(item)}
+                        disabled={openingId === item.id}
                       >
-                        <Text style={styles.playText}>
-                          {playingId === item.id ? 'Stop' : 'Play'}
-                        </Text>
+                        {openingId === item.id ? (
+                          <ActivityIndicator color="#fff" />
+                        ) : (
+                          <Text style={styles.playText}>Play in App</Text>
+                        )}
                       </TouchableOpacity>
                     </MotiView>
                   )}
@@ -216,31 +229,11 @@ export default function HomeScreen() {
           </View>
         )}
       />
-
-      {/* Mini YouTube Player */}
-      {playerUrl && (
-        <View style={styles.playerContainer}>
-          <WebView
-            source={{ uri: playerUrl }}
-            allowsInlineMediaPlayback={true}
-            mediaPlaybackRequiresUserAction={false}
-            style={styles.player}
-          />
-          <TouchableOpacity
-            onPress={() => {
-              setPlayerUrl(null);
-              setPlayingId(null);
-            }}
-            style={styles.closeButton}
-          >
-            <Text style={styles.closeText}>✕</Text>
-          </TouchableOpacity>
-        </View>
-      )}
     </SafeAreaView>
   );
 }
 
+/* --------------------------------------------------- STYLES --------------------------------------------------- */
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   loginBox: {
@@ -304,7 +297,7 @@ const styles = StyleSheet.create({
   },
   feed: {
     paddingHorizontal: 20,
-    paddingBottom: 100, // Space for player
+    paddingBottom: 20,
   },
   card: {
     marginBottom: 32,
@@ -371,31 +364,6 @@ const styles = StyleSheet.create({
   playText: {
     color: '#fff',
     fontWeight: 'bold',
-    fontSize: 16,
-  },
-  playerContainer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 80,
-    backgroundColor: '#000',
-    borderTopWidth: 1,
-    borderColor: '#333',
-  },
-  player: {
-    height: 80,
-  },
-  closeButton: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    padding: 8,
-    borderRadius: 20,
-  },
-  closeText: {
-    color: '#fff',
     fontSize: 16,
   },
 });
