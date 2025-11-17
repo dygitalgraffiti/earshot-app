@@ -1,27 +1,35 @@
 // app/(tabs)/index.tsx
-import React, { useState, useEffect, useRef } from 'react';
-import {
-  Text,
-  View,
-  TextInput,
-  FlatList,
-  Image,
-  StyleSheet,
-  TouchableOpacity,
-  Alert,
-  Dimensions,
-  ActivityIndicator,
-  Linking,
-  Animated,
-} from 'react-native';
-import { MotiView, AnimatePresence } from 'moti';
-import * as Haptics from 'expo-haptics';
-import { useNavigation } from '@react-navigation/native';
-import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useNavigation } from '@react-navigation/native';
+import * as Haptics from 'expo-haptics';
+import { AnimatePresence, MotiView } from 'moti';
+import { useEffect, useRef, useState } from 'react';
+import {
+    ActivityIndicator,
+    Alert,
+    Animated,
+    Dimensions,
+    Image,
+    Linking,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
+} from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Reanimated, {
+    runOnJS,
+    useAnimatedStyle,
+    useSharedValue,
+    withSpring,
+    withTiming,
+} from 'react-native-reanimated';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const { width } = Dimensions.get('window');
-const CARD_WIDTH = width * 0.42;
+const { width, height } = Dimensions.get('window');
+const VINYL_SIZE = Math.min(width * 0.85, height * 0.5);
+const VINYL_CENTER_HOLE = VINYL_SIZE * 0.15;
 
 const API_URL = 'https://earshot-app.onrender.com';
 
@@ -32,7 +40,7 @@ interface Post {
   thumbnail: string;
   username: string;
   url: string;
-  createdAt: string; // ISO string from server
+  createdAt: string;
 }
 
 export default function HomeScreen() {
@@ -48,8 +56,14 @@ export default function HomeScreen() {
   const [openingId, setOpeningId] = useState<number | null>(null);
   const [currentTrack, setCurrentTrack] = useState<Post | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const flatListRef = useRef<FlatList>(null);
+  const [currentIndex, setCurrentIndex] = useState(0);
   const miniPlayerAnim = useRef(new Animated.Value(0)).current;
+
+  // Animation values for vinyl stack
+  const translateY = useSharedValue(0);
+  const rotation = useSharedValue(0);
+  const scale = useSharedValue(1);
+  const opacity = useSharedValue(1);
 
   /* ────── LOAD TOKEN ON MOUNT ────── */
   useEffect(() => {
@@ -99,6 +113,7 @@ export default function HomeScreen() {
       });
       const data = await res.json();
       setFeed(data);
+      setCurrentIndex(0);
     } catch {
       Alert.alert('Feed Error', 'Could not load posts');
     }
@@ -130,6 +145,29 @@ export default function HomeScreen() {
     setFlipped(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
+  /* ────── NAVIGATION ────── */
+  const goToNext = () => {
+    if (currentIndex < feed.length - 1) {
+      setCurrentIndex(prev => prev + 1);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+  };
+
+  const goToPrevious = () => {
+    if (currentIndex > 0) {
+      setCurrentIndex(prev => prev - 1);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+  };
+
+  // Reset animation when index changes
+  useEffect(() => {
+    translateY.value = 0;
+    rotation.value = 0;
+    scale.value = 1;
+    opacity.value = 1;
+  }, [currentIndex]);
+
   /* ────── PLAY ────── */
   const playSong = async (post: Post) => {
     if (openingId === post.id) return;
@@ -145,11 +183,8 @@ export default function HomeScreen() {
       await Linking.openURL(target);
       setCurrentTrack(post);
       setIsPlaying(true);
-      const idx = feed.findIndex(p => p.id === post.id);
-      if (idx !== -1) flatListRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.5 });
       Animated.timing(miniPlayerAnim, { toValue: 1, duration: 300, useNativeDriver: true }).start();
 
-      // auto‑hide after 30 s
       setTimeout(() => {
         if (currentTrack?.id === post.id) closePlayer();
       }, 30_000);
@@ -190,6 +225,50 @@ export default function HomeScreen() {
     return `${diff}d ago`;
   };
 
+  /* ────── GESTURE HANDLING ────── */
+  const panGesture = Gesture.Pan()
+    .onUpdate((e) => {
+      translateY.value = e.translationY;
+      // Add rotation based on horizontal movement for vinyl feel
+      rotation.value = e.translationX * 0.1;
+      // Scale down slightly when dragging
+      const absTranslation = Math.abs(e.translationY);
+      const maxTranslation = height * 0.3;
+      scale.value = absTranslation > maxTranslation ? 0.9 : 1 - (absTranslation / maxTranslation) * 0.1;
+    })
+    .onEnd((e) => {
+      const threshold = height * 0.15;
+      const velocity = e.velocityY;
+
+      if (e.translationY > threshold || velocity > 1000) {
+        // Swipe down - next record
+        translateY.value = withTiming(height, { duration: 300 });
+        opacity.value = withTiming(0, { duration: 300 });
+        runOnJS(goToNext)();
+      } else if (e.translationY < -threshold || velocity < -1000) {
+        // Swipe up - previous record
+        translateY.value = withTiming(-height, { duration: 300 });
+        opacity.value = withTiming(0, { duration: 300 });
+        runOnJS(goToPrevious)();
+      } else {
+        // Spring back to center
+        translateY.value = withSpring(0);
+        rotation.value = withSpring(0);
+        scale.value = withSpring(1);
+      }
+    });
+
+  const animatedCardStyle = useAnimatedStyle(() => {
+    return {
+      transform: [
+        { translateY: translateY.value },
+        { rotateZ: `${rotation.value}deg` },
+        { scale: scale.value },
+      ],
+      opacity: opacity.value,
+    };
+  });
+
   /* ────── UI ────── */
   if (!token) {
     return (
@@ -207,6 +286,10 @@ export default function HomeScreen() {
     );
   }
 
+  const currentPost = feed[currentIndex];
+  const hasNext = currentIndex < feed.length - 1;
+  const hasPrevious = currentIndex > 0;
+
   return (
     <SafeAreaProvider style={{ flex: 1, backgroundColor: '#000' }}>
       <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -222,70 +305,129 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        <FlatList
-          ref={flatListRef}
-          data={feed}
-          keyExtractor={i => i.id.toString()}
-          contentContainerStyle={styles.feed}
-          showsVerticalScrollIndicator={false}
-          renderItem={({ item }) => (
-            <View style={styles.cardContainer}>
-              <TouchableOpacity onPress={() => toggleFlip(item.id)} activeOpacity={0.95}>
-                <View style={styles.flipWrapper}>
-                  <AnimatePresence>
-                    {!flipped[item.id] ? (
-                      <MotiView
-                        key={`front-${item.id}`}
-                        from={{ rotateY: '0deg' }}
-                        animate={{ rotateY: '0deg' }}
-                        exit={{ rotateY: '-90deg' }}
-                        transition={{ type: 'timing', duration: 300 }}
-                        style={styles.cardFront}
-                      >
-                        <View style={styles.albumArtContainer}>
-                          <Image source={{ uri: item.thumbnail }} style={styles.albumArtCropped} resizeMode="cover" />
-                        </View>
-                      </MotiView>
-                    ) : (
-                      <MotiView
-                        key={`back-${item.id}`}
-                        from={{ rotateY: '90deg' }}
-                        animate={{ rotateY: '0deg' }}
-                        transition={{ type: 'timing', duration: 300 }}
-                        style={styles.cardBack}
-                      >
-                        <Text style={styles.backTitle} numberOfLines={2}>
-                          {item.title}
-                        </Text>
-                        <Text style={styles.backArtist}>{item.artist}</Text>
-
-                        <TouchableOpacity
-                          style={styles.playButton}
-                          onPress={() => playSong(item)}
-                          disabled={openingId === item.id}
-                        >
-                          {openingId === item.id ? (
-                            <ActivityIndicator color="#fff" />
-                          ) : (
-                            <Text style={styles.playText}>Play in App</Text>
-                          )}
-                        </TouchableOpacity>
-                      </MotiView>
-                    )}
-                  </AnimatePresence>
+        {/* VINYL RECORD STACK */}
+        {feed.length > 0 && currentPost ? (
+          <View style={styles.vinylContainer}>
+            {/* Next record preview (behind current) */}
+            {hasNext && feed[currentIndex + 1] && (
+              <View style={[styles.vinylStack, styles.vinylBehind]}>
+                <View style={styles.vinylRecord}>
+                  <Image
+                    source={{ uri: feed[currentIndex + 1].thumbnail }}
+                    style={styles.vinylImage}
+                  />
+                  <View style={styles.vinylCenterHole} />
                 </View>
-              </TouchableOpacity>
-
-              {/* USER + TIME BELOW */}
-              <View style={styles.cardFooter}>
-                <TouchableOpacity onPress={() => openProfile(item.username)}>
-                  <Text style={styles.footerUsername}>@{item.username}</Text>
-                </TouchableOpacity>
-                <Text style={styles.footerTime}>{formatDate(item.createdAt)}</Text>
               </View>
+            )}
+
+            {/* Current record */}
+            <GestureDetector gesture={panGesture}>
+              <Reanimated.View style={[styles.vinylStack, animatedCardStyle]}>
+                <TouchableOpacity
+                  onPress={() => toggleFlip(currentPost.id)}
+                  activeOpacity={0.95}
+                  style={styles.vinylTouchable}
+                >
+                  <View style={styles.vinylRecord}>
+                    <AnimatePresence>
+                      {!flipped[currentPost.id] ? (
+                        <MotiView
+                          key={`front-${currentPost.id}`}
+                          from={{ rotateY: '0deg' }}
+                          animate={{ rotateY: '0deg' }}
+                          exit={{ rotateY: '-90deg' }}
+                          transition={{ type: 'timing', duration: 300 }}
+                          style={styles.vinylFront}
+                        >
+                          <Image
+                            source={{ uri: currentPost.thumbnail }}
+                            style={styles.vinylImage}
+                          />
+                          <View style={styles.vinylCenterHole} />
+                          <View style={styles.vinylGrooves}>
+                            {[...Array(8)].map((_, i) => (
+                              <View
+                                key={i}
+                                style={[
+                                  styles.groove,
+                                  {
+                                    width: VINYL_SIZE * (0.3 + i * 0.05),
+                                    height: VINYL_SIZE * (0.3 + i * 0.05),
+                                  },
+                                ]}
+                              />
+                            ))}
+                          </View>
+                        </MotiView>
+                      ) : (
+                        <MotiView
+                          key={`back-${currentPost.id}`}
+                          from={{ rotateY: '90deg' }}
+                          animate={{ rotateY: '0deg' }}
+                          transition={{ type: 'timing', duration: 300 }}
+                          style={styles.vinylBack}
+                        >
+                          <View style={styles.vinylBackContent}>
+                            <Text style={styles.backTitle} numberOfLines={2}>
+                              {currentPost.title}
+                            </Text>
+                            <Text style={styles.backArtist}>{currentPost.artist}</Text>
+                            <TouchableOpacity
+                              style={styles.playButton}
+                              onPress={() => playSong(currentPost)}
+                              disabled={openingId === currentPost.id}
+                            >
+                              {openingId === currentPost.id ? (
+                                <ActivityIndicator color="#fff" />
+                              ) : (
+                                <Text style={styles.playText}>Play in App</Text>
+                              )}
+                            </TouchableOpacity>
+                          </View>
+                          <View style={styles.vinylCenterHole} />
+                        </MotiView>
+                      )}
+                    </AnimatePresence>
+                  </View>
+                </TouchableOpacity>
+
+                {/* USER + TIME BELOW */}
+                <View style={styles.cardFooter}>
+                  <TouchableOpacity onPress={() => openProfile(currentPost.username)}>
+                    <Text style={styles.footerUsername}>@{currentPost.username}</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.footerTime}>{formatDate(currentPost.createdAt)}</Text>
+                </View>
+
+                {/* Swipe hints */}
+                <View style={styles.swipeHints}>
+                  {hasPrevious && (
+                    <View style={styles.swipeHint}>
+                      <Text style={styles.swipeHintText}>↑ Previous</Text>
+                    </View>
+                  )}
+                  {hasNext && (
+                    <View style={styles.swipeHint}>
+                      <Text style={styles.swipeHintText}>↓ Next</Text>
+                    </View>
+                  )}
+                </View>
+              </Reanimated.View>
+            </GestureDetector>
+
+            {/* Progress indicator */}
+            <View style={styles.progressContainer}>
+              <Text style={styles.progressText}>
+                {currentIndex + 1} / {feed.length}
+              </Text>
             </View>
-          )}
-        />
+          </View>
+        ) : (
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyText}>No posts yet</Text>
+          </View>
+        )}
 
         {/* MINI‑PLAYER */}
         {currentTrack && (
@@ -339,22 +481,163 @@ const styles = StyleSheet.create({
   postBox: { paddingHorizontal: 20, marginBottom: 16 },
   postBtn: { backgroundColor: '#1DB954', padding: 12, borderRadius: 12, alignItems: 'center', marginTop: 8 },
   postBtnText: { color: '#fff', fontWeight: 'bold' },
-  feed: { paddingHorizontal: 20, paddingBottom: 100 },
 
-  cardContainer: { marginBottom: 32, alignItems: 'center' },
-  flipWrapper: { width: CARD_WIDTH, height: CARD_WIDTH },
-  cardFront: { width: CARD_WIDTH, height: CARD_WIDTH, borderRadius: 16, overflow: 'hidden', backgroundColor: '#111' },
-  albumArtContainer: { width: CARD_WIDTH, height: CARD_WIDTH, overflow: 'hidden', borderRadius: 16 },
-  albumArtCropped: { width: CARD_WIDTH * 1.78, height: CARD_WIDTH * 1.78, position: 'absolute', left: -CARD_WIDTH * 0.39, top: -CARD_WIDTH * 0.39 },
-  cardBack: { width: CARD_WIDTH, height: CARD_WIDTH, backgroundColor: '#111', borderRadius: 16, padding: 16, justifyContent: 'center', alignItems: 'center' },
-  backTitle: { color: '#fff', fontWeight: 'bold', fontSize: 14, textAlign: 'center', marginBottom: 6 },
-  backArtist: { color: '#aaa', fontSize: 12, textAlign: 'center', marginBottom: 16 },
-  playButton: { backgroundColor: '#1DB954', paddingHorizontal: 24, paddingVertical: 8, borderRadius: 20 },
-  playText: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
+  // Vinyl stack styles
+  vinylContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 20,
+  },
+  vinylStack: {
+    width: VINYL_SIZE,
+    height: VINYL_SIZE,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  vinylBehind: {
+    position: 'absolute',
+    opacity: 0.3,
+    transform: [{ scale: 0.95 }, { translateY: 20 }],
+    zIndex: 0,
+  },
+  vinylTouchable: {
+    width: '100%',
+    height: '100%',
+  },
+  vinylRecord: {
+    width: VINYL_SIZE,
+    height: VINYL_SIZE,
+    borderRadius: VINYL_SIZE / 2,
+    backgroundColor: '#111',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.5,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  vinylFront: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  vinylBack: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#111',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  vinylImage: {
+    width: VINYL_SIZE,
+    height: VINYL_SIZE,
+    borderRadius: VINYL_SIZE / 2,
+  },
+  vinylCenterHole: {
+    position: 'absolute',
+    width: VINYL_CENTER_HOLE,
+    height: VINYL_CENTER_HOLE,
+    borderRadius: VINYL_CENTER_HOLE / 2,
+    backgroundColor: '#000',
+    zIndex: 10,
+    borderWidth: 2,
+    borderColor: '#333',
+  },
+  vinylGrooves: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  groove: {
+    position: 'absolute',
+    borderRadius: 1000,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  vinylBackContent: {
+    padding: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+  },
+  backTitle: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 18,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  backArtist: {
+    color: '#aaa',
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  playButton: {
+    backgroundColor: '#1DB954',
+    paddingHorizontal: 32,
+    paddingVertical: 12,
+    borderRadius: 24,
+  },
+  playText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
 
-  cardFooter: { marginTop: 8, flexDirection: 'row', justifyContent: 'space-between', width: CARD_WIDTH },
-  footerUsername: { color: '#1DB954', fontWeight: 'bold', fontSize: 13 },
-  footerTime: { color: '#666', fontSize: 12 },
+  cardFooter: {
+    marginTop: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: VINYL_SIZE,
+    paddingHorizontal: 20,
+  },
+  footerUsername: {
+    color: '#1DB954',
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  footerTime: {
+    color: '#666',
+    fontSize: 12,
+  },
+
+  swipeHints: {
+    marginTop: 12,
+    alignItems: 'center',
+  },
+  swipeHint: {
+    marginVertical: 4,
+  },
+  swipeHintText: {
+    color: '#444',
+    fontSize: 11,
+    fontWeight: '500',
+  },
+
+  progressContainer: {
+    marginTop: 20,
+    alignItems: 'center',
+  },
+  progressText: {
+    color: '#666',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyText: {
+    color: '#666',
+    fontSize: 16,
+  },
 
   miniPlayer: {
     position: 'absolute',
