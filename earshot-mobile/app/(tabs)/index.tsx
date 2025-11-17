@@ -16,7 +16,7 @@ import {
 import { MotiView, AnimatePresence } from 'moti';
 
 const { width } = Dimensions.get('window');
-const CARD_WIDTH = width * 0.85;
+const CARD_WIDTH = width * 0.42;
 
 const API_URL = 'https://earshot-app.onrender.com';
 
@@ -306,13 +306,13 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   // NEW: Crop 16:9 → 1:1 center
-  albumArtCropped: {
-    width: CARD_WIDTH * 1.78,   // 16:9
-    height: CARD_WIDTH * 1.78,
-    position: 'absolute',
-    left: -CARD_WIDTH * 0.39,   // (1.78 - 1) / 2
-    top: -CARD_WIDTH * 0.39,
-  },
+ albumArtCropped: {
+  width: CARD_WIDTH * 1.78,
+  height: CARD_WIDTH * 1.78,
+  position: 'absolute',
+  left: -CARD_WIDTH * 0.39,
+  top: -CARD_WIDTH * 0.39,
+},
   frontUsername: {
     position: 'absolute',
     bottom: 16,
