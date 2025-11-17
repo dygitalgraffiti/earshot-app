@@ -26,7 +26,7 @@ interface Post {
   artist: string;
   thumbnail: string;
   username: string;
-  url: string;               // YouTube or Spotify link
+  url: string;
 }
 
 export default function HomeScreen() {
@@ -36,9 +36,9 @@ export default function HomeScreen() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [flipped, setFlipped] = useState<Record<number, boolean>>({});
-  const [openingId, setOpeningId] = useState<number | null>(null); // UI feedback
+  const [openingId, setOpeningId] = useState<number | null>(null);
 
-  /* --------------------------------------------------- AUTH --------------------------------------------------- */
+  /* AUTH */
   const login = async () => {
     if (!username || !password) {
       Alert.alert('Missing', 'Please fill in both fields');
@@ -100,54 +100,34 @@ export default function HomeScreen() {
     setFlipped(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  /* --------------------------------------------------- PLAY --------------------------------------------------- */
+  /* PLAY – App or Browser */
   const playSong = async (post: Post) => {
-    if (openingId === post.id) return; // already handling
-
+    if (openingId === post.id) return;
     setOpeningId(post.id);
 
     let target = post.url;
-
-    // Spotify URI → web URL (so browser fallback works)
     if (target.startsWith('spotify:')) {
       target = target.replace('spotify:', 'https://open.spotify.com/');
     }
 
     try {
       const canOpen = await Linking.canOpenURL(target);
-      await Linking.openURL(target);               // opens native app **or** browser
-    } catch (err) {
-      console.warn('Linking error:', err);
-      // Fallback – force browser
+      await Linking.openURL(target);
+    } catch {
       await Linking.openURL(target);
     } finally {
       setOpeningId(null);
     }
   };
 
-  /* --------------------------------------------------- UI --------------------------------------------------- */
   if (!token) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loginBox}>
           <Text style={styles.logo}>Earshot</Text>
-          <Text style={styles.slogan}>Share music.. Follow friends.</Text>
-
-          <TextInput
-            placeholder="Username"
-            value={username}
-            onChangeText={setUsername}
-            style={styles.input}
-            autoCapitalize="none"
-          />
-          <TextInput
-            placeholder="Password"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            style={styles.input}
-          />
-
+          <Text style={styles.slogan}>Share music. Follow friends.</Text>
+          <TextInput placeholder="Username" value={username} onChangeText={setUsername} style={styles.input} autoCapitalize="none" />
+          <TextInput placeholder="Password" value={password} onChangeText={setPassword} secureTextEntry style={styles.input} />
           <TouchableOpacity style={styles.button} onPress={login}>
             <Text style={styles.buttonText}>LOGIN</Text>
           </TouchableOpacity>
@@ -164,12 +144,7 @@ export default function HomeScreen() {
       </View>
 
       <View style={styles.postBox}>
-        <TextInput
-          placeholder="Paste YouTube/Spotify link..."
-          value={url}
-          onChangeText={setUrl}
-          style={styles.input}
-        />
+        <TextInput placeholder="Paste YouTube/Spotify link..." value={url} onChangeText={setUrl} style={styles.input} />
         <TouchableOpacity style={styles.postBtn} onPress={postTrack}>
           <Text style={styles.postBtnText}>POST</Text>
         </TouchableOpacity>
@@ -194,7 +169,14 @@ export default function HomeScreen() {
                       transition={{ type: 'timing', duration: 300 }}
                       style={styles.cardFront}
                     >
-                      <Image source={{ uri: item.thumbnail }} style={styles.albumArt} />
+                      {/* CROPPED ALBUM ART – NO BLACK BARS */}
+                      <View style={styles.albumArtContainer}>
+                        <Image
+                          source={{ uri: item.thumbnail }}
+                          style={styles.albumArtCropped}
+                          resizeMode="cover"
+                        />
+                      </View>
                       <Text style={styles.frontUsername}>@{item.username}</Text>
                     </MotiView>
                   ) : (
@@ -233,7 +215,7 @@ export default function HomeScreen() {
   );
 }
 
-/* --------------------------------------------------- STYLES --------------------------------------------------- */
+/* STYLES – CROPPED ART + NO BLACK BARS */
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   loginBox: {
@@ -316,10 +298,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  albumArt: {
+  // NEW: Crop container
+  albumArtContainer: {
     width: CARD_WIDTH,
     height: CARD_WIDTH,
+    overflow: 'hidden',
     borderRadius: 20,
+  },
+  // NEW: Crop 16:9 → 1:1 center
+  albumArtCropped: {
+    width: CARD_WIDTH * 1.78,   // 16:9
+    height: CARD_WIDTH * 1.78,
+    position: 'absolute',
+    left: -CARD_WIDTH * 0.39,   // (1.78 - 1) / 2
+    top: -CARD_WIDTH * 0.39,
   },
   frontUsername: {
     position: 'absolute',
