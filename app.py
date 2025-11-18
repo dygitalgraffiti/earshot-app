@@ -495,6 +495,20 @@ def api_delete_post(post_id):
     
     return jsonify({'success': True, 'message': 'Post deleted successfully'})
 
+# ---------- GET CURRENT USER ----------
+@app.route('/api/me', methods=['GET'])
+@jwt_required()
+def api_me():
+    """Get the current authenticated user's information."""
+    current_user_id = int(get_jwt_identity())
+    current_user = User.query.get_or_404(current_user_id)
+    
+    return jsonify({
+        'id': current_user.id,
+        'username': current_user.username,
+        'twitter': current_user.twitter,
+    })
+
 # ---------- UPDATE USERNAME ----------
 @app.route('/api/profile/username', methods=['PUT'])
 @jwt_required()
