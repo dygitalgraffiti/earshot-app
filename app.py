@@ -143,12 +143,17 @@ def parse_track_url(url: str):
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
                 title = info.get('title', 'Unknown Title')
-                artist = info.get('artist') or info.get('channel') or info.get('uploader') or 'Unknown Artist'
                 thumbnail = info.get('thumbnail') or f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
-                uploader = info.get('uploader') or info.get('channel')
                 
-                # If artist not found in metadata or is just the uploader/channel, try parsing from title
-                if not info.get('artist') or (uploader and artist == uploader):
+                # Prioritize channel/uploader as artist (they're typically the artist)
+                # Only use explicit 'artist' field if it exists, otherwise use channel/uploader
+                artist = info.get('artist')  # Use explicit artist field if available
+                if not artist:
+                    # Use channel or uploader as artist (they're usually the artist)
+                    artist = info.get('channel') or info.get('uploader') or 'Unknown Artist'
+                
+                # Only try parsing from title if we don't have a good artist name
+                if artist == 'Unknown Artist':
                     for sep in [' - ', ' · ', ' | ', ' — ', ' – ', ' by ']:
                         if sep in title:
                             parts = [x.strip() for x in title.rsplit(sep, 1)]
@@ -170,19 +175,25 @@ def parse_track_url(url: str):
         except Exception as e:
             print(f"YouTube parsing error: {e}")
             # Fallback to oembed if yt-dlp fails
+            # Note: oembed doesn't provide channel info, so we parse from title
             try:
                 o = requests.get(f"https://www.youtube.com/oembed?url={url}&format=json").json()
                 full = o['title']
-                artist = 'Unknown Artist'
-                for sep in [' - ', ' · ', ' | ', ' — ', ' – ']:
-                    if sep in full:
-                        parts = [x.strip() for x in full.rsplit(sep, 1)]
-                        if len(parts) == 2:
-                            if len(parts[0]) < 50:
-                                artist, full = parts[0], parts[1]
-                            else:
-                                full, artist = parts[0], parts[1]
-                            break
+                # Try to get author/channel name from oembed (if available)
+                artist = o.get('author_name') or 'Unknown Artist'
+                
+                # If we got author from oembed, use it; otherwise try parsing from title
+                if artist == 'Unknown Artist':
+                    for sep in [' - ', ' · ', ' | ', ' — ', ' – ']:
+                        if sep in full:
+                            parts = [x.strip() for x in full.rsplit(sep, 1)]
+                            if len(parts) == 2:
+                                if len(parts[0]) < 50:
+                                    artist, full = parts[0], parts[1]
+                                else:
+                                    full, artist = parts[0], parts[1]
+                                break
+                
                 return 'youtube', {
                     'title': full,
                     'artist': artist,
