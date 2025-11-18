@@ -1,4 +1,5 @@
 // app/ProfileScreen.tsx
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
@@ -6,12 +7,12 @@ import {
   Alert,
   FlatList,
   Image,
+  Linking,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 const API_URL = 'https://earshot-app.onrender.com';
@@ -22,6 +23,7 @@ interface ProfilePost {
   artist: string;
   thumbnail: string;
   url: string;
+  createdAt: string;
   is_first_discover: boolean;
 }
 
@@ -126,6 +128,26 @@ export default function ProfileScreen() {
     );
   };
 
+  const openSong = async (url: string) => {
+    try {
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert('Error', 'Unable to open link');
+    }
+  };
+
+  const formatDate = (iso: string) => {
+    if (!iso) return '';
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return '';
+
+    const now = Date.now();
+    const diff = Math.floor((now - date.getTime()) / (1000 * 60 * 60 * 24));
+    if (diff === 0) return 'Today';
+    if (diff === 1) return 'Yesterday';
+    return date.toLocaleDateString();
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -169,7 +191,11 @@ export default function ProfileScreen() {
         data={profile.posts}
         keyExtractor={(item) => item.id.toString()}
         renderItem={({ item }) => (
-          <View style={styles.postItem}>
+          <TouchableOpacity
+            style={styles.postItem}
+            activeOpacity={0.8}
+            onPress={() => openSong(item.url)}
+          >
             <Image source={{ uri: item.thumbnail }} style={styles.thumbnail} />
             <View style={styles.postInfo}>
               <Text style={styles.postTitle} numberOfLines={1}>
@@ -177,6 +203,9 @@ export default function ProfileScreen() {
               </Text>
               <Text style={styles.postArtist} numberOfLines={1}>
                 {item.artist || 'Unknown Artist'}
+              </Text>
+              <Text style={styles.postDate}>
+                {formatDate(item.createdAt)}
               </Text>
             </View>
             {profile.is_own_profile && (
@@ -192,7 +221,7 @@ export default function ProfileScreen() {
                 )}
               </TouchableOpacity>
             )}
-          </View>
+          </TouchableOpacity>
         )}
         ListEmptyComponent={
           <View style={styles.empty}>
@@ -273,6 +302,11 @@ const styles = StyleSheet.create({
   postArtist: {
     fontSize: 14,
     color: '#888',
+  },
+  postDate: {
+    fontSize: 12,
+    color: '#555',
+    marginTop: 4,
   },
   menuButton: {
     padding: 8,
