@@ -307,57 +307,74 @@ def logout():
 # ---------- MOBILE API ----------
 @app.route('/api/login', methods=['POST'])
 def api_login():
-    data = request.get_json()
-    device_id = data.get('device_id', '').strip()
-    username_input = data.get('username', '').strip()
-    
-    if not device_id:
-        return jsonify({'error': 'Device ID required'}), 400
-    
-    # Check if user exists with this device_id
-    user = User.query.filter_by(device_id=device_id).first()
-    
-    if user:
-        # Existing user - update username if provided and different
-        if username_input and username_input.lower() != user.username:
-            new_username = username_input.lower()
-            # Check if new username is taken
-            if User.query.filter(func.lower(User.username) == new_username).filter(User.id != user.id).first():
-                return jsonify({'error': 'Username already taken'}), 400
-            user.username = new_username
-            db.session.commit()
+    try:
+        data = request.get_json()
+        device_id = data.get('device_id', '').strip()
+        username_input = data.get('username', '').strip()
         
-        token = create_access_token(identity=str(user.id))
+        if not device_id:
+            return jsonify({'error': 'Device ID required'}), 400
+        
+        # Check if user exists with this device_id
+        try:
+            user = User.query.filter_by(device_id=device_id).first()
+        except Exception as e:
+            # Database column might not exist yet - try to create it
+            print(f"Database error (device_id column might be missing): {e}")
+            try:
+                with app.app_context():
+                    db.create_all()  # This will add the device_id column if it doesn't exist
+                user = User.query.filter_by(device_id=device_id).first()
+            except Exception as e2:
+                print(f"Failed to create database columns: {e2}")
+                return jsonify({'error': 'Database migration needed. Please contact support.'}), 500
+        
+        if user:
+            # Existing user - update username if provided and different
+            if username_input and username_input.lower() != user.username:
+                new_username = username_input.lower()
+                # Check if new username is taken
+                if User.query.filter(func.lower(User.username) == new_username).filter(User.id != user.id).first():
+                    return jsonify({'error': 'Username already taken'}), 400
+                user.username = new_username
+                db.session.commit()
+            
+            token = create_access_token(identity=str(user.id))
+            return jsonify({
+                'success': True,
+                'token': token,
+                'user': {'id': user.id, 'username': user.username}
+            })
+        
+        # New user - create account
+        if username_input:
+            username = username_input.lower()
+            # Check if username is taken
+            if User.query.filter(func.lower(User.username) == username).first():
+                return jsonify({'error': 'Username already taken'}), 400
+        else:
+            # Generate random username
+            username = generate_username()
+        
+        new_user = User(
+            username=username,
+            device_id=device_id,
+            password_hash=None  # No password needed
+        )
+        db.session.add(new_user)
+        db.session.commit()
+        
+        token = create_access_token(identity=str(new_user.id))
         return jsonify({
             'success': True,
             'token': token,
-            'user': {'id': user.id, 'username': user.username}
+            'user': {'id': new_user.id, 'username': new_user.username}
         })
-    
-    # New user - create account
-    if username_input:
-        username = username_input.lower()
-        # Check if username is taken
-        if User.query.filter(func.lower(User.username) == username).first():
-            return jsonify({'error': 'Username already taken'}), 400
-    else:
-        # Generate random username
-        username = generate_username()
-    
-    new_user = User(
-        username=username,
-        device_id=device_id,
-        password_hash=None  # No password needed
-    )
-    db.session.add(new_user)
-    db.session.commit()
-    
-    token = create_access_token(identity=str(new_user.id))
-    return jsonify({
-        'success': True,
-        'token': token,
-        'user': {'id': new_user.id, 'username': new_user.username}
-    })
+    except Exception as e:
+        print(f"Login error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Server error: {str(e)}'}), 500
 
 @app.route('/api/feed', methods=['GET'])
 @jwt_required()
@@ -505,6 +522,34 @@ def api_update_username():
         'success': True,
         'username': current_user.username
     })
+
+# ---------- DATABASE MIGRATION ----------
+@app.route('/api/migrate-device-id', methods=['POST'])
+def migrate_device_id():
+    """Add device_id column to user table if it doesn't exist."""
+    try:
+        # Check if column exists by trying to query it
+        try:
+            User.query.limit(1).all()
+            # Try to access device_id on a user
+            test_user = User.query.first()
+            if test_user and not hasattr(test_user, 'device_id'):
+                raise AttributeError("device_id column missing")
+        except (AttributeError, Exception) as e:
+            # Column doesn't exist, add it
+            try:
+                db.session.execute(text('ALTER TABLE "user" ADD COLUMN device_id VARCHAR(200)'))
+                db.session.commit()
+                return jsonify({'success': True, 'message': 'device_id column added successfully'})
+            except Exception as e2:
+                # Column might already exist or different error
+                if 'duplicate column' in str(e2).lower() or 'already exists' in str(e2).lower():
+                    return jsonify({'success': True, 'message': 'device_id column already exists'})
+                return jsonify({'error': f'Migration failed: {str(e2)}'}), 500
+        
+        return jsonify({'success': True, 'message': 'device_id column already exists'})
+    except Exception as e:
+        return jsonify({'error': f'Migration error: {str(e)}'}), 500
 
 # ---------- MIGRATION ENDPOINT (ONE-TIME USE) ----------
 @app.route('/api/migrate-artists', methods=['POST'])
