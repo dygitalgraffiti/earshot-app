@@ -2,6 +2,7 @@
 
 import os
 import re
+import random
 import yt_dlp
 import requests
 from datetime import datetime
@@ -53,7 +54,8 @@ class User(db.Model):
     __tablename__ = 'user'
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)   # stored lowercase
-    password_hash = db.Column(db.String(200), nullable=False)
+    password_hash = db.Column(db.String(200), nullable=True)  # Optional now
+    device_id = db.Column(db.String(200), nullable=True, index=True)  # Device identifier
     twitter = db.Column(db.String(100), nullable=True)  # X/Twitter handle
 
     posts = db.relationship('Post', backref='author', lazy='dynamic')
@@ -91,6 +93,30 @@ class Post(db.Model):
     timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
 
 # ---------- HELPERS ----------
+def generate_username():
+    """Generate a random 4-word username like 'purple-bear-3488'"""
+    adjectives = ['purple', 'blue', 'green', 'red', 'yellow', 'orange', 'pink', 'black', 'white', 'gray',
+                  'swift', 'bold', 'calm', 'bright', 'dark', 'cool', 'warm', 'sharp', 'smooth', 'rough']
+    nouns = ['bear', 'wolf', 'eagle', 'tiger', 'lion', 'fox', 'hawk', 'shark', 'dragon', 'phoenix',
+             'star', 'moon', 'sun', 'cloud', 'wave', 'storm', 'fire', 'ice', 'wind', 'stone']
+    
+    adj = random.choice(adjectives)
+    noun = random.choice(nouns)
+    num1 = random.randint(10, 99)
+    num2 = random.randint(10, 99)
+    
+    username = f"{adj}-{noun}-{num1}{num2}"
+    
+    # Ensure uniqueness
+    while User.query.filter(func.lower(User.username) == username.lower()).first():
+        adj = random.choice(adjectives)
+        noun = random.choice(nouns)
+        num1 = random.randint(10, 99)
+        num2 = random.randint(10, 99)
+        username = f"{adj}-{noun}-{num1}{num2}"
+    
+    return username
+
 def login_required(f):
     from functools import wraps
     @wraps(f)
@@ -282,13 +308,56 @@ def logout():
 @app.route('/api/login', methods=['POST'])
 def api_login():
     data = request.get_json()
-    username = data.get('username', '').strip().lower()
-    password = data.get('password')
-    user = User.query.filter(func.lower(User.username) == username).first()
-    if user and check_password_hash(user.password_hash, password):
+    device_id = data.get('device_id', '').strip()
+    username_input = data.get('username', '').strip()
+    
+    if not device_id:
+        return jsonify({'error': 'Device ID required'}), 400
+    
+    # Check if user exists with this device_id
+    user = User.query.filter_by(device_id=device_id).first()
+    
+    if user:
+        # Existing user - update username if provided and different
+        if username_input and username_input.lower() != user.username:
+            new_username = username_input.lower()
+            # Check if new username is taken
+            if User.query.filter(func.lower(User.username) == new_username).filter(User.id != user.id).first():
+                return jsonify({'error': 'Username already taken'}), 400
+            user.username = new_username
+            db.session.commit()
+        
         token = create_access_token(identity=str(user.id))
-        return jsonify({'success': True, 'token': token, 'user': {'id': user.id, 'username': user.username}})
-    return jsonify({'error': 'Invalid credentials'}), 401
+        return jsonify({
+            'success': True,
+            'token': token,
+            'user': {'id': user.id, 'username': user.username}
+        })
+    
+    # New user - create account
+    if username_input:
+        username = username_input.lower()
+        # Check if username is taken
+        if User.query.filter(func.lower(User.username) == username).first():
+            return jsonify({'error': 'Username already taken'}), 400
+    else:
+        # Generate random username
+        username = generate_username()
+    
+    new_user = User(
+        username=username,
+        device_id=device_id,
+        password_hash=None  # No password needed
+    )
+    db.session.add(new_user)
+    db.session.commit()
+    
+    token = create_access_token(identity=str(new_user.id))
+    return jsonify({
+        'success': True,
+        'token': token,
+        'user': {'id': new_user.id, 'username': new_user.username}
+    })
 
 @app.route('/api/feed', methods=['GET'])
 @jwt_required()
@@ -409,6 +478,33 @@ def api_delete_post(post_id):
     db.session.commit()
     
     return jsonify({'success': True, 'message': 'Post deleted successfully'})
+
+# ---------- UPDATE USERNAME ----------
+@app.route('/api/profile/username', methods=['PUT'])
+@jwt_required()
+def api_update_username():
+    """Update the current user's username."""
+    current_user_id = int(get_jwt_identity())
+    current_user = User.query.get_or_404(current_user_id)
+    
+    data = request.get_json()
+    new_username = data.get('username', '').strip().lower()
+    
+    if not new_username:
+        return jsonify({'error': 'Username is required'}), 400
+    
+    # Check if username is already taken by another user
+    existing_user = User.query.filter(func.lower(User.username) == new_username).filter(User.id != current_user_id).first()
+    if existing_user:
+        return jsonify({'error': 'Username already taken'}), 400
+    
+    current_user.username = new_username
+    db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'username': current_user.username
+    })
 
 # ---------- MIGRATION ENDPOINT (ONE-TIME USE) ----------
 @app.route('/api/migrate-artists', methods=['POST'])
