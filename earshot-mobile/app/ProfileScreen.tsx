@@ -68,7 +68,10 @@ export default function ProfileScreen() {
         }
 
         const data = await res.json();
-        setProfile(data);
+        setProfile({
+          ...data,
+          is_following: Boolean(data.is_following),
+        });
       } catch (e) {
         console.error('Profile error:', e);
         Alert.alert('Error', 'Failed to load profile');
@@ -175,8 +178,24 @@ export default function ProfileScreen() {
       });
 
       if (!res.ok) {
-        const error = await res.json().catch(() => ({}));
-        Alert.alert('Error', error.error || 'Failed to update follow status');
+        const errorText = await res.text();
+        let errorMsg = 'Failed to update follow status';
+        try {
+          const parsed = JSON.parse(errorText);
+          errorMsg = parsed.error || errorMsg;
+        } catch {
+          if (res.status === 401) {
+            errorMsg = 'Session expired. Please log in again.';
+          } else if (errorText) {
+            errorMsg = errorText;
+          }
+        }
+        Alert.alert('Error', errorMsg);
+        if (res.status === 401) {
+          await AsyncStorage.removeItem('authToken');
+          setToken(null);
+          router.push('/');
+        }
         return;
       }
 
@@ -253,9 +272,11 @@ export default function ProfileScreen() {
               <Text style={styles.postTitle} numberOfLines={1}>
                 {item.title}
               </Text>
-              <Text style={styles.postArtist} numberOfLines={1}>
-                {item.artist || 'Unknown Artist'}
-              </Text>
+              {item.artist && item.artist.trim().toLowerCase() !== 'unknown artist' && (
+                <Text style={styles.postArtist} numberOfLines={1}>
+                  {item.artist}
+                </Text>
+              )}
               <Text style={styles.postDate}>
                 {formatDate(
                   item.createdAt ||
