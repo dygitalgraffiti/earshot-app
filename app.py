@@ -378,7 +378,24 @@ def api_login():
 @app.route('/api/feed', methods=['GET'])
 @jwt_required()
 def api_feed():
-    posts = Post.query.order_by(Post.timestamp.desc()).limit(100).all()
+    feed_type = request.args.get('type', 'global')  # 'global' or 'following'
+    current_user_id = int(get_jwt_identity())
+    current_user = User.query.get(current_user_id)
+    
+    if feed_type == 'following' and current_user:
+        # Get users that current user follows
+        following_users = current_user.following.all()
+        following_ids = [user.id for user in following_users]
+        following_ids.append(current_user_id)  # Include own posts
+        if following_ids:
+            posts = Post.query.filter(Post.user_id.in_(following_ids)).order_by(Post.timestamp.desc()).limit(100).all()
+        else:
+            # User follows no one, only show their own posts
+            posts = Post.query.filter(Post.user_id == current_user_id).order_by(Post.timestamp.desc()).limit(100).all()
+    else:
+        # Global feed - all posts
+        posts = Post.query.order_by(Post.timestamp.desc()).limit(100).all()
+    
     feed = []
     for p in posts:
         feed.append({
