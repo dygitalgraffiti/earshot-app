@@ -14,10 +14,12 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   View
 } from 'react-native';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, {
+  Easing,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
@@ -53,12 +55,14 @@ export default function HomeScreen() {
   const [currentPostIndex, setCurrentPostIndex] = useState(0);
   const [openingId, setOpeningId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isFlipped, setIsFlipped] = useState(false);
 
   // Animation values
   const translateY = useSharedValue(0);
   const rotateZ = useSharedValue(0);
   const scale = useSharedValue(1);
   const opacity = useSharedValue(1);
+  const flipRotation = useSharedValue(0);
 
   // Load token on mount and handle share intents
   useEffect(() => {
@@ -211,6 +215,7 @@ export default function HomeScreen() {
   };
 
   const currentPost = feed[currentPostIndex];
+  const showArtist = currentPost?.artist && currentPost.artist.toLowerCase() !== 'unknown artist';
   const hasNext = currentPostIndex < feed.length - 1;
   const hasPrevious = currentPostIndex > 0;
 
@@ -218,6 +223,21 @@ export default function HomeScreen() {
   useEffect(() => {
     console.log('HomeScreen rendered, feed length:', feed.length, 'currentIndex:', currentPostIndex);
   }, [feed.length, currentPostIndex]);
+
+  useEffect(() => {
+    // reset flip when post changes
+    setIsFlipped(false);
+    flipRotation.value = 0;
+  }, [currentPostIndex]);
+
+  const toggleFlip = () => {
+    const next = !isFlipped;
+    setIsFlipped(next);
+    flipRotation.value = withTiming(next ? 180 : 0, {
+      duration: 500,
+      easing: Easing.out(Easing.cubic),
+    });
+  };
 
   /* ────── AUTH ────── */
   const login = async () => {
@@ -475,6 +495,14 @@ export default function HomeScreen() {
     opacity: opacity.value,
   }));
 
+  const frontFlipStyle = useAnimatedStyle(() => ({
+    transform: [{ rotateY: `${flipRotation.value}deg` }],
+  }));
+
+  const backFlipStyle = useAnimatedStyle(() => ({
+    transform: [{ rotateY: `${flipRotation.value + 180}deg` }],
+  }));
+
   /* ────── UI ────── */
   if (!token) {
     return (
@@ -548,53 +576,67 @@ export default function HomeScreen() {
           <GestureDetector gesture={panGesture}>
             <View style={styles.vinylContainer}>
               <Animated.View style={[styles.vinylWrapper, animatedStyle]}>
-              {/* Vinyl Record */}
-              <View style={styles.vinyl}>
-                {/* Album Art Center */}
-                <View style={styles.vinylCenter}>
-                  <Image source={{ uri: currentPost.thumbnail }} style={styles.albumArt} resizeMode="cover" />
-                </View>
+                <TouchableWithoutFeedback onPress={toggleFlip}>
+                  <View style={styles.flipContainer}>
+                    <Animated.View style={[styles.flipFace, frontFlipStyle]}>
+                      {/* Vinyl Record */}
+                      <View style={styles.vinyl}>
+                        {/* Album Art Center */}
+                        <View style={styles.vinylCenter}>
+                          <Image source={{ uri: currentPost.thumbnail }} style={styles.albumArt} resizeMode="cover" />
+                        </View>
 
-                {/* Vinyl Grooves */}
-                <View style={styles.groove1} />
-                <View style={styles.groove2} />
-                <View style={styles.groove3} />
+                        {/* Vinyl Grooves */}
+                        <View style={styles.groove1} />
+                        <View style={styles.groove2} />
+                        <View style={styles.groove3} />
 
-                {/* Center Hole */}
-                <View style={styles.centerHole} />
-              </View>
+                        {/* Center Hole */}
+                        <View style={styles.centerHole} />
+                      </View>
 
-              {/* Info Overlay */}
-              <View style={styles.infoOverlay}>
-                <Text style={styles.title} numberOfLines={2}>
-                  {currentPost.title}
-                </Text>
-                <Text style={styles.artist} numberOfLines={1}>
-                  {currentPost.artist}
-                </Text>
-                <TouchableOpacity onPress={() => openProfile(currentPost.username)}>
-                  <Text style={styles.username}>@{currentPost.username}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.playButton}
-                  onPress={() => playSong(currentPost)}
-                  disabled={openingId === currentPost.id}
-                >
-                  {openingId === currentPost.id ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <Text style={styles.playText}>▶ Play</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
+                      {/* Info Overlay */}
+                      <View style={styles.infoOverlay}>
+                        <Text style={styles.title} numberOfLines={2}>
+                          {currentPost.title}
+                        </Text>
+                        {showArtist && (
+                          <Text style={styles.artist} numberOfLines={1}>
+                            {currentPost.artist}
+                          </Text>
+                        )}
+                        <TouchableOpacity onPress={() => openProfile(currentPost.username)}>
+                          <Text style={styles.username}>@{currentPost.username}</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.playButton}
+                          onPress={() => playSong(currentPost)}
+                          disabled={openingId === currentPost.id}
+                        >
+                          {openingId === currentPost.id ? (
+                            <ActivityIndicator color="#fff" />
+                          ) : (
+                            <Text style={styles.playText}>▶ Play</Text>
+                          )}
+                        </TouchableOpacity>
+                      </View>
+                    </Animated.View>
+
+                    <Animated.View style={[styles.flipFace, styles.flipBack, backFlipStyle]}>
+                      <View style={styles.vinylBack}>
+                        <Text style={styles.backPlaceholder}>Coming Soon</Text>
+                      </View>
+                    </Animated.View>
+                  </View>
+                </TouchableWithoutFeedback>
               </Animated.View>
-            
-            {/* Swipe Hint - positioned at the bottom */}
-            {hasNext && (
-              <View style={[styles.swipeHintContainer, { bottom: 50 }]}>
-                <Text style={styles.swipeHint}>↓ Swipe for next</Text>
-              </View>
-            )}
+
+              {/* Swipe Hint - positioned at the bottom */}
+              {hasNext && (
+                <View style={[styles.swipeHintContainer, { bottom: 50 }]}>
+                  <Text style={styles.swipeHint}>↓ Swipe for next</Text>
+                </View>
+              )}
             </View>
           </GestureDetector>
         </GestureHandlerRootView>
@@ -669,6 +711,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  flipContainer: {
+    width: VINYL_SIZE,
+    height: VINYL_SIZE,
+    position: 'relative',
+  },
+  flipFace: {
+    width: '100%',
+    height: '100%',
+    backfaceVisibility: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  flipBack: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+  },
   vinyl: {
     width: VINYL_SIZE,
     height: VINYL_SIZE,
@@ -725,6 +784,22 @@ const styles = StyleSheet.create({
     backgroundColor: '#000',
     borderWidth: 1,
     borderColor: '#333',
+  },
+  vinylBack: {
+    width: VINYL_SIZE,
+    height: VINYL_SIZE,
+    borderRadius: VINYL_SIZE / 2,
+    backgroundColor: '#111',
+    borderWidth: 2,
+    borderColor: '#333',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  backPlaceholder: {
+    color: '#555',
+    letterSpacing: 1,
+    fontSize: 16,
+    textTransform: 'uppercase',
   },
   infoOverlay: {
     position: 'absolute',

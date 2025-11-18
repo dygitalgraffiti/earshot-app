@@ -36,6 +36,7 @@ interface ProfileData {
     following: number;
   };
   is_own_profile: boolean;
+  is_following: boolean;
   posts: ProfilePost[];
 }
 
@@ -136,10 +137,10 @@ export default function ProfileScreen() {
     }
   };
 
-  const formatDate = (iso: string) => {
-    if (!iso) return '';
+  const formatDate = (iso?: string) => {
+    if (!iso) return 'Just now';
     const date = new Date(iso);
-    if (Number.isNaN(date.getTime())) return '';
+    if (Number.isNaN(date.getTime())) return 'Just now';
 
     const now = Date.now();
     const diff = Math.floor((now - date.getTime()) / (1000 * 60 * 60 * 24));
@@ -158,6 +159,41 @@ export default function ProfileScreen() {
     );
   }
 
+  const toggleFollow = async () => {
+    if (!token || !profile) {
+      Alert.alert('Error', 'You must be logged in to follow users');
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API_URL}/api/follow/${profile.user.id}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({}));
+        Alert.alert('Error', error.error || 'Failed to update follow status');
+        return;
+      }
+
+      const data = await res.json();
+      setProfile({
+        ...profile,
+        is_following: data.action === 'followed',
+        user: {
+          ...profile.user,
+          followers: data.followers,
+        },
+      });
+    } catch (e) {
+      Alert.alert('Error', 'Failed to update follow status');
+    }
+  };
+
   if (!profile) {
     return (
       <SafeAreaView style={styles.container}>
@@ -174,6 +210,22 @@ export default function ProfileScreen() {
         <Text style={styles.username}>@{profile.user.username}</Text>
         {profile.user.twitter && (
           <Text style={styles.twitter}>@{profile.user.twitter}</Text>
+        )}
+        {!profile.is_own_profile && (
+          <TouchableOpacity
+            style={[
+              styles.followButton,
+              profile.is_following ? styles.followingButton : null,
+            ]}
+            onPress={toggleFollow}
+          >
+            <Text style={[
+              styles.followButtonText,
+              profile.is_following ? styles.followingButtonText : null,
+            ]}>
+              {profile.is_following ? 'Following' : 'Follow'}
+            </Text>
+          </TouchableOpacity>
         )}
         <View style={styles.stats}>
           <View style={styles.stat}>
@@ -205,7 +257,12 @@ export default function ProfileScreen() {
                 {item.artist || 'Unknown Artist'}
               </Text>
               <Text style={styles.postDate}>
-                {formatDate(item.createdAt)}
+                {formatDate(
+                  item.createdAt ||
+                  // fallback field names just in case
+                  (item as any).created_at ||
+                  (item as any).created_at
+                )}
               </Text>
             </View>
             {profile.is_own_profile && (
@@ -263,6 +320,7 @@ const styles = StyleSheet.create({
   stats: {
     flexDirection: 'row',
     gap: 30,
+    marginTop: 16,
   },
   stat: {
     alignItems: 'center',
@@ -305,8 +363,29 @@ const styles = StyleSheet.create({
   },
   postDate: {
     fontSize: 12,
-    color: '#555',
+    color: '#bbb',
     marginTop: 4,
+  },
+  followButton: {
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: '#1DB954',
+    marginTop: 12,
+  },
+  followButtonText: {
+    color: '#000',
+    fontWeight: 'bold',
+    fontSize: 14,
+    textTransform: 'uppercase',
+  },
+  followingButton: {
+    backgroundColor: '#222',
+    borderWidth: 1,
+    borderColor: '#444',
+  },
+  followingButtonText: {
+    color: '#fff',
   },
   menuButton: {
     padding: 8,
