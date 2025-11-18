@@ -2,6 +2,7 @@
 import { extractUrlFromText, parseMusicUrl } from '@/utils/urlParser';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
+import * as Application from 'expo-application';
 import * as Haptics from 'expo-haptics';
 import * as Linking from 'expo-linking';
 import { useEffect, useState } from 'react';
@@ -51,11 +52,12 @@ export default function HomeScreen() {
   const [feed, setFeed] = useState<Post[]>([]);
   const [url, setUrl] = useState('');
   const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const [deviceId, setDeviceId] = useState<string | null>(null);
   const [currentPostIndex, setCurrentPostIndex] = useState(0);
   const [openingId, setOpeningId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [isFlipped, setIsFlipped] = useState(false);
+  const [listenerCount, setListenerCount] = useState(35);
 
   // Animation values
   const translateY = useSharedValue(0);
@@ -63,24 +65,48 @@ export default function HomeScreen() {
   const scale = useSharedValue(1);
   const opacity = useSharedValue(1);
   const flipRotation = useSharedValue(0);
+  const pulseOpacity = useSharedValue(0.4);
 
   // Load token on mount and handle share intents
   useEffect(() => {
-    const loadToken = async () => {
+    const initialize = async () => {
       try {
+        // Get or create device ID
+        let deviceIdValue = await AsyncStorage.getItem('deviceId');
+        if (!deviceIdValue) {
+          // Use expo-application installation ID as device identifier
+          try {
+            deviceIdValue = await Application.getInstallationIdAsync();
+          } catch (e) {
+            // Fallback to a random ID if installation ID not available
+            deviceIdValue = `device-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+          }
+          if (!deviceIdValue) {
+            deviceIdValue = `device-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+          }
+          await AsyncStorage.setItem('deviceId', deviceIdValue);
+        }
+        setDeviceId(deviceIdValue);
+
+        // Try to load saved token
         const savedToken = await AsyncStorage.getItem('authToken');
         if (savedToken) {
           setToken(savedToken);
           await loadFeed(savedToken);
         } else {
-          setLoading(false);
+          // Auto-login with device ID if no token (deviceId is now set)
+          if (deviceIdValue) {
+            await login();
+          } else {
+            setLoading(false);
+          }
         }
       } catch (e) {
-        console.warn('Failed to load token:', e);
+        console.warn('Failed to initialize:', e);
         setLoading(false);
       }
     };
-    loadToken();
+    initialize();
 
     // Handle share intents (Android) - only check after a short delay to avoid false positives
     const handleShareIntent = async () => {
@@ -224,6 +250,39 @@ export default function HomeScreen() {
     console.log('HomeScreen rendered, feed length:', feed.length, 'currentIndex:', currentPostIndex);
   }, [feed.length, currentPostIndex]);
 
+  // Update listener count randomly every 3-7 seconds
+  useEffect(() => {
+    const updateListenerCount = () => {
+      const newCount = Math.floor(Math.random() * (50 - 25 + 1)) + 25;
+      setListenerCount(newCount);
+    };
+
+    // Initial random count
+    updateListenerCount();
+
+    // Update at random intervals
+    const interval = setInterval(() => {
+      updateListenerCount();
+    }, Math.random() * 4000 + 3000); // 3-7 seconds
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Pulsing animation for listener count
+  useEffect(() => {
+    const animatePulse = () => {
+      pulseOpacity.value = withTiming(0.8, { duration: 1000 });
+      setTimeout(() => {
+        pulseOpacity.value = withTiming(0.4, { duration: 1000 });
+      }, 1000);
+    };
+
+    animatePulse();
+    const interval = setInterval(animatePulse, 2000);
+
+    return () => clearInterval(interval);
+  }, []);
+
   useEffect(() => {
     // reset flip when post changes
     setIsFlipped(false);
@@ -241,26 +300,36 @@ export default function HomeScreen() {
 
   /* ────── AUTH ────── */
   const login = async () => {
-    if (!username || !password) {
-      Alert.alert('Missing', 'Please fill in both fields');
+    if (!deviceId) {
+      Alert.alert('Error', 'Device ID not available');
       return;
     }
     try {
       const res = await fetch(`${API_URL}/api/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ 
+          device_id: deviceId,
+          username: username.trim() || undefined  // Send undefined if empty to trigger auto-generation
+        }),
       });
       const data = await res.json();
       if (data.token) {
         setToken(data.token);
         await AsyncStorage.setItem('authToken', data.token);
+        // Update username if it was auto-generated
+        if (data.user && data.user.username) {
+          setUsername(data.user.username);
+        }
         await loadFeed(data.token);
       } else {
         Alert.alert('Login Failed', data.error || 'Try again');
+        setLoading(false);
       }
-    } catch {
+    } catch (e) {
+      console.error('Login error:', e);
       Alert.alert('Network Error', 'Check your connection');
+      setLoading(false);
     }
   };
 
@@ -503,6 +572,10 @@ export default function HomeScreen() {
     transform: [{ rotateY: `${flipRotation.value + 180}deg` }],
   }));
 
+  const pulseStyle = useAnimatedStyle(() => ({
+    opacity: pulseOpacity.value,
+  }));
+
   /* ────── UI ────── */
   if (!token) {
     return (
@@ -511,24 +584,19 @@ export default function HomeScreen() {
           <Text style={styles.logo}>Earshot</Text>
           <Text style={styles.slogan}>Share music. Follow friends.</Text>
           <TextInput
-            placeholder="Username"
+            placeholder="Username (optional - leave blank for auto-generated)"
             value={username}
             onChangeText={setUsername}
             style={styles.input}
             autoCapitalize="none"
             placeholderTextColor="#666"
           />
-          <TextInput
-            placeholder="Password"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            style={styles.input}
-            placeholderTextColor="#666"
-          />
           <TouchableOpacity style={styles.button} onPress={login}>
-            <Text style={styles.buttonText}>LOGIN</Text>
+            <Text style={styles.buttonText}>CONTINUE</Text>
           </TouchableOpacity>
+          <Text style={styles.hintText}>
+            Leave blank to get a random username like "purple-bear-3488"
+          </Text>
         </View>
       </SafeAreaProvider>
     );
@@ -631,6 +699,14 @@ export default function HomeScreen() {
                 </View>
               </Animated.View>
 
+              {/* Listener Count - pulsing text with live dot */}
+              <Animated.View style={[styles.listenerContainer, { bottom: 90 }, pulseStyle]}>
+                <View style={styles.listenerRow}>
+                  <View style={styles.liveDot} />
+                  <Text style={styles.listenerText}>{listenerCount} listening...</Text>
+                </View>
+              </Animated.View>
+
               {/* Swipe Hint - positioned at the bottom */}
               {hasNext && (
                 <View style={[styles.swipeHintContainer, { bottom: 50 }]}>
@@ -690,6 +766,13 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: 'bold',
     fontSize: 16,
+  },
+  hintText: {
+    color: '#666',
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 12,
+    paddingHorizontal: 20,
   },
   header: {
     paddingHorizontal: 20,
@@ -851,6 +934,31 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 12,
     textAlign: 'center',
+  },
+  listenerContainer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+  },
+  listenerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#1DB954',
+  },
+  listenerText: {
+    color: 'rgba(255, 255, 255, 0.5)',
+    fontSize: 11,
+    textAlign: 'center',
+    fontWeight: '300',
   },
   footer: {
     paddingHorizontal: 20,
