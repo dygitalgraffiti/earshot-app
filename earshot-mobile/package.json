@@ -11,13 +11,12 @@
     "lint": "expo lint"
   },
   "dependencies": {
-    "@expo/vector-icons": "^15.0.3",
     "@react-native-async-storage/async-storage": "^2.1.0",
+    "@expo/vector-icons": "^15.0.3",
     "@react-navigation/bottom-tabs": "^7.4.0",
     "@react-navigation/elements": "^2.6.3",
     "@react-navigation/native": "^7.1.8",
     "expo": "~54.0.23",
-    "expo-application": "~6.0.2",
     "expo-av": "~16.0.7",
     "expo-constants": "~18.0.10",
     "expo-font": "~14.0.9",

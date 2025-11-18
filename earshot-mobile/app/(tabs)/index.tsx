@@ -2,7 +2,6 @@
 import { extractUrlFromText, parseMusicUrl } from '@/utils/urlParser';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
-import * as Application from 'expo-application';
 import * as Haptics from 'expo-haptics';
 import * as Linking from 'expo-linking';
 import { useEffect, useState } from 'react';
@@ -71,19 +70,11 @@ export default function HomeScreen() {
   useEffect(() => {
     const initialize = async () => {
       try {
-        // Get or create device ID
+        // Get or create device ID (persists forever on this device)
         let deviceIdValue = await AsyncStorage.getItem('deviceId');
         if (!deviceIdValue) {
-          // Use expo-application installation ID as device identifier
-          try {
-            deviceIdValue = await Application.getInstallationIdAsync();
-          } catch (e) {
-            // Fallback to a random ID if installation ID not available
-            deviceIdValue = `device-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-          }
-          if (!deviceIdValue) {
-            deviceIdValue = `device-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-          }
+          // Generate a unique device ID and store it permanently
+          deviceIdValue = `device-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}`;
           await AsyncStorage.setItem('deviceId', deviceIdValue);
         }
         setDeviceId(deviceIdValue);
@@ -94,9 +85,9 @@ export default function HomeScreen() {
           setToken(savedToken);
           await loadFeed(savedToken);
         } else {
-          // Auto-login with device ID if no token (deviceId is now set)
+          // Auto-login with device ID if no token
           if (deviceIdValue) {
-            await login();
+            await login(deviceIdValue);
           } else {
             setLoading(false);
           }
@@ -299,9 +290,11 @@ export default function HomeScreen() {
   };
 
   /* ────── AUTH ────── */
-  const login = async () => {
-    if (!deviceId) {
+  const login = async (deviceIdParam?: string) => {
+    const deviceIdToUse = deviceIdParam || deviceId;
+    if (!deviceIdToUse) {
       Alert.alert('Error', 'Device ID not available');
+      setLoading(false);
       return;
     }
     try {
@@ -309,10 +302,18 @@ export default function HomeScreen() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          device_id: deviceId,
+          device_id: deviceIdToUse,
           username: username.trim() || undefined  // Send undefined if empty to trigger auto-generation
         }),
       });
+      
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        Alert.alert('Login Failed', errorData.error || 'Try again');
+        setLoading(false);
+        return;
+      }
+      
       const data = await res.json();
       if (data.token) {
         setToken(data.token);
