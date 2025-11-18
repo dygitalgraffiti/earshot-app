@@ -1,28 +1,22 @@
 // app/ProfileScreen.tsx
-import React, { useState, useEffect } from 'react';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
+  ActivityIndicator,
+  Alert,
   FlatList,
   Image,
+  StyleSheet,
+  Text,
   TouchableOpacity,
-  TextInput,
-  Alert,
-  ActivityIndicator,
-  Linking,
-  Dimensions,
+  View,
 } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Haptics from 'expo-haptics';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-const { width } = Dimensions.get('window');
-const CARD_WIDTH = width * 0.42;
 const API_URL = 'https://earshot-app.onrender.com';
 
-interface Post {
+interface ProfilePost {
   id: number;
   title: string;
   artist: string;
@@ -31,168 +25,111 @@ interface Post {
   is_first_discover: boolean;
 }
 
-interface ProfileUser {
-  id: number;
-  username: string;
-  twitter: string;
-  followers: number;
-  following: number;
-  is_following: boolean;
+interface ProfileData {
+  user: {
+    id: number;
+    username: string;
+    twitter: string;
+    followers: number;
+    following: number;
+  };
   is_own_profile: boolean;
+  posts: ProfilePost[];
 }
 
 export default function ProfileScreen() {
   const { username } = useLocalSearchParams<{ username: string }>();
   const router = useRouter();
-
-  const [token, setToken] = useState<string | null>(null);
-  const [profile, setProfile] = useState<ProfileUser | null>(null);
-  const [posts, setPosts] = useState<Post[]>([]);
+  const [profile, setProfile] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [following, setFollowing] = useState(false);
-  const [isEditingTwitter, setIsEditingTwitter] = useState(false);
-  const [twitterInput, setTwitterInput] = useState('');
-  const [savingTwitter, setSavingTwitter] = useState(false);
+  const [token, setToken] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
-  // Load token from storage
   useEffect(() => {
-    const loadToken = async () => {
+    const loadProfile = async () => {
       try {
-        const storedToken = await AsyncStorage.getItem('auth_token');
-        if (storedToken) {
-          setToken(storedToken);
+        const savedToken = await AsyncStorage.getItem('authToken');
+        setToken(savedToken);
+        
+        const headers: HeadersInit = {
+          'Content-Type': 'application/json',
+        };
+        if (savedToken) {
+          headers['Authorization'] = `Bearer ${savedToken}`;
         }
+
+        const res = await fetch(`${API_URL}/api/profile/${username}`, { headers });
+        if (!res.ok) {
+          Alert.alert('Error', 'Failed to load profile');
+          return;
+        }
+
+        const data = await res.json();
+        setProfile(data);
       } catch (e) {
-        console.warn('Failed to load token:', e);
+        console.error('Profile error:', e);
+        Alert.alert('Error', 'Failed to load profile');
+      } finally {
+        setLoading(false);
       }
     };
-    loadToken();
-  }, []);
 
-  // Load profile data
-  useEffect(() => {
-    if (username) {
-      loadProfile();
-    }
-  }, [username, token]);
+    loadProfile();
+  }, [username]);
 
-  const loadProfile = async () => {
-    if (!username) return;
-    setLoading(true);
-    try {
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json',
-      };
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-
-      const res = await fetch(`${API_URL}/api/profile/${username}`, {
-        headers,
-      });
-
-      if (res.status === 404) {
-        Alert.alert('Not Found', 'User not found');
-        router.back();
-        return;
-      }
-
-      const data = await res.json();
-      setProfile(data.user);
-      setPosts(data.posts);
-      setFollowing(data.user.is_following);
-      setTwitterInput(data.user.twitter || '');
-    } catch (e) {
-      Alert.alert('Error', 'Failed to load profile');
-      console.warn(e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleFollow = async () => {
-    if (!token || !profile) {
-      Alert.alert('Login Required', 'Please log in to follow users');
-      return;
-    }
-
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    try {
-      const res = await fetch(`${API_URL}/api/follow/${profile.id}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      const data = await res.json();
-      if (res.ok) {
-        setFollowing(data.is_following);
-        setProfile(prev => prev ? { ...prev, followers: data.followers } : null);
-      } else {
-        Alert.alert('Error', data.error || 'Failed to follow');
-      }
-    } catch (e) {
-      Alert.alert('Error', 'Network error');
-    }
-  };
-
-  const handleSaveTwitter = async () => {
+  const deletePost = async (postId: number) => {
     if (!token) {
-      Alert.alert('Login Required', 'Please log in to update your profile');
+      Alert.alert('Error', 'You must be logged in to delete posts');
       return;
     }
 
-    setSavingTwitter(true);
-    try {
-      const res = await fetch(`${API_URL}/api/profile/twitter`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
+    Alert.alert(
+      'Delete Post',
+      'Are you sure you want to delete this post?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setDeletingId(postId);
+              const res = await fetch(`${API_URL}/api/post/${postId}`, {
+                method: 'DELETE',
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json',
+                },
+              });
+
+              if (!res.ok) {
+                const error = await res.json();
+                Alert.alert('Error', error.error || 'Failed to delete post');
+                return;
+              }
+
+              // Remove post from local state
+              if (profile) {
+                setProfile({
+                  ...profile,
+                  posts: profile.posts.filter(p => p.id !== postId),
+                });
+              }
+            } catch (e) {
+              Alert.alert('Error', 'Failed to delete post');
+            } finally {
+              setDeletingId(null);
+            }
+          },
         },
-        body: JSON.stringify({ twitter: twitterInput }),
-      });
-
-      const data = await res.json();
-      if (res.ok) {
-        setProfile(prev => prev ? { ...prev, twitter: data.twitter } : null);
-        setIsEditingTwitter(false);
-        Alert.alert('Success', 'Twitter handle updated');
-      } else {
-        Alert.alert('Error', data.error || 'Failed to update');
-      }
-    } catch (e) {
-      Alert.alert('Error', 'Network error');
-    } finally {
-      setSavingTwitter(false);
-    }
-  };
-
-  const openTwitter = (handle: string) => {
-    if (!handle) return;
-    const cleanHandle = handle.startsWith('@') ? handle.slice(1) : handle;
-    Linking.openURL(`https://twitter.com/${cleanHandle}`);
-  };
-
-  const playSong = async (post: Post) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    let target = post.url;
-    if (target.startsWith('spotify:')) {
-      target = target.replace('spotify:', 'https://open.spotify.com/');
-    }
-    try {
-      await Linking.openURL(target);
-    } catch (e) {
-      console.warn(e);
-    }
+      ]
+    );
   };
 
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
+        <View style={styles.center}>
           <ActivityIndicator size="large" color="#1DB954" />
         </View>
       </SafeAreaView>
@@ -202,8 +139,8 @@ export default function ProfileScreen() {
   if (!profile) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <Text style={styles.errorText}>User not found</Text>
+        <View style={styles.center}>
+          <Text style={styles.errorText}>Profile not found</Text>
         </View>
       </SafeAreaView>
     );
@@ -211,139 +148,54 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <FlatList
-        data={posts}
-        keyExtractor={item => item.id.toString()}
-        ListHeaderComponent={
-          <View style={styles.header}>
-            <Text style={styles.username}>@{profile.username}</Text>
-
-            {/* Stats */}
-            <View style={styles.stats}>
-              <View style={styles.statItem}>
-                <Text style={styles.statNumber}>{profile.followers}</Text>
-                <Text style={styles.statLabel}>Followers</Text>
-              </View>
-              <View style={styles.statItem}>
-                <Text style={styles.statNumber}>{profile.following}</Text>
-                <Text style={styles.statLabel}>Following</Text>
-              </View>
-              <View style={styles.statItem}>
-                <Text style={styles.statNumber}>{posts.length}</Text>
-                <Text style={styles.statLabel}>Posts</Text>
-              </View>
-            </View>
-
-            {/* Twitter Section */}
-            {profile.is_own_profile ? (
-              <View style={styles.twitterSection}>
-                {isEditingTwitter ? (
-                  <View style={styles.twitterEdit}>
-                    <TextInput
-                      style={styles.twitterInput}
-                      value={twitterInput}
-                      onChangeText={setTwitterInput}
-                      placeholder="Twitter handle (without @)"
-                      placeholderTextColor="#666"
-                      autoCapitalize="none"
-                    />
-                    <TouchableOpacity
-                      style={styles.saveButton}
-                      onPress={handleSaveTwitter}
-                      disabled={savingTwitter}
-                    >
-                      {savingTwitter ? (
-                        <ActivityIndicator size="small" color="#fff" />
-                      ) : (
-                        <Text style={styles.saveButtonText}>Save</Text>
-                      )}
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.cancelButton}
-                      onPress={() => {
-                        setIsEditingTwitter(false);
-                        setTwitterInput(profile.twitter || '');
-                      }}
-                    >
-                      <Text style={styles.cancelButtonText}>Cancel</Text>
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  <View style={styles.twitterDisplay}>
-                    {profile.twitter ? (
-                      <TouchableOpacity
-                        style={styles.twitterLink}
-                        onPress={() => openTwitter(profile.twitter)}
-                      >
-                        <Text style={styles.twitterText}>@{profile.twitter}</Text>
-                        <Text style={styles.twitterLinkText}>Open on X</Text>
-                      </TouchableOpacity>
-                    ) : (
-                      <Text style={styles.noTwitter}>No X account linked</Text>
-                    )}
-                    <TouchableOpacity
-                      style={styles.editTwitterButton}
-                      onPress={() => setIsEditingTwitter(true)}
-                    >
-                      <Text style={styles.editTwitterButtonText}>
-                        {profile.twitter ? 'Edit' : 'Link X Account'}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </View>
-            ) : (
-              profile.twitter && (
-                <TouchableOpacity
-                  style={styles.twitterLink}
-                  onPress={() => openTwitter(profile.twitter)}
-                >
-                  <Text style={styles.twitterText}>@{profile.twitter}</Text>
-                  <Text style={styles.twitterLinkText}>Open on X</Text>
-                </TouchableOpacity>
-              )
-            )}
-
-            {/* Follow Button */}
-            {!profile.is_own_profile && (
-              <TouchableOpacity
-                style={[styles.followButton, following && styles.followingButton]}
-                onPress={handleFollow}
-              >
-                <Text style={[styles.followButtonText, following && styles.followingButtonText]}>
-                  {following ? 'Following' : 'Follow'}
-                </Text>
-              </TouchableOpacity>
-            )}
+      <View style={styles.header}>
+        <Text style={styles.username}>@{profile.user.username}</Text>
+        {profile.user.twitter && (
+          <Text style={styles.twitter}>@{profile.user.twitter}</Text>
+        )}
+        <View style={styles.stats}>
+          <View style={styles.stat}>
+            <Text style={styles.statNumber}>{profile.user.followers}</Text>
+            <Text style={styles.statLabel}>Followers</Text>
           </View>
-        }
-        contentContainerStyle={styles.listContent}
-        numColumns={2}
-        columnWrapperStyle={styles.row}
+          <View style={styles.stat}>
+            <Text style={styles.statNumber}>{profile.user.following}</Text>
+            <Text style={styles.statLabel}>Following</Text>
+          </View>
+        </View>
+      </View>
+
+      <FlatList
+        data={profile.posts}
+        keyExtractor={(item) => item.id.toString()}
         renderItem={({ item }) => (
-          <TouchableOpacity
-            style={styles.postCard}
-            onPress={() => playSong(item)}
-            activeOpacity={0.9}
-          >
-            <Image source={{ uri: item.thumbnail }} style={styles.postThumbnail} />
-            {item.is_first_discover && (
-              <View style={styles.firstDiscoverBadge}>
-                <Text style={styles.firstDiscoverText}>✨ First</Text>
-              </View>
-            )}
+          <View style={styles.postItem}>
+            <Image source={{ uri: item.thumbnail }} style={styles.thumbnail} />
             <View style={styles.postInfo}>
               <Text style={styles.postTitle} numberOfLines={1}>
                 {item.title}
               </Text>
               <Text style={styles.postArtist} numberOfLines={1}>
-                {item.artist}
+                {item.artist || 'Unknown Artist'}
               </Text>
             </View>
-          </TouchableOpacity>
+            {profile.is_own_profile && (
+              <TouchableOpacity
+                style={styles.menuButton}
+                onPress={() => deletePost(item.id)}
+                disabled={deletingId === item.id}
+              >
+                {deletingId === item.id ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.menuDots}>⋯</Text>
+                )}
+              </TouchableOpacity>
+            )}
+          </View>
         )}
         ListEmptyComponent={
-          <View style={styles.emptyContainer}>
+          <View style={styles.empty}>
             <Text style={styles.emptyText}>No posts yet</Text>
           </View>
         }
@@ -357,193 +209,90 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000',
   },
-  loadingContainer: {
+  center: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  errorText: {
-    color: '#fff',
-    fontSize: 16,
   },
   header: {
     padding: 20,
     alignItems: 'center',
     borderBottomWidth: 1,
     borderBottomColor: '#222',
-    marginBottom: 20,
   },
   username: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: 'bold',
     color: '#1DB954',
-    marginBottom: 20,
+    marginBottom: 4,
+  },
+  twitter: {
+    fontSize: 16,
+    color: '#888',
+    marginBottom: 16,
   },
   stats: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    width: '100%',
-    marginBottom: 20,
+    gap: 30,
   },
-  statItem: {
+  stat: {
     alignItems: 'center',
   },
   statNumber: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#fff',
   },
   statLabel: {
-    fontSize: 12,
+    fontSize: 14,
     color: '#888',
     marginTop: 4,
   },
-  twitterSection: {
-    width: '100%',
-    marginBottom: 20,
-  },
-  twitterDisplay: {
-    alignItems: 'center',
-  },
-  twitterLink: {
+  postItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#222',
   },
-  twitterText: {
-    color: '#1DA1F2',
-    fontSize: 16,
-    marginRight: 8,
-  },
-  twitterLinkText: {
-    color: '#888',
-    fontSize: 12,
-  },
-  noTwitter: {
-    color: '#666',
-    fontSize: 14,
-    marginBottom: 12,
-  },
-  editTwitterButton: {
-    backgroundColor: '#1DA1F2',
-    paddingVertical: 8,
-    paddingHorizontal: 20,
-    borderRadius: 20,
-  },
-  editTwitterButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
-  twitterEdit: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  twitterInput: {
-    backgroundColor: '#222',
-    color: '#fff',
-    padding: 12,
+  thumbnail: {
+    width: 60,
+    height: 60,
     borderRadius: 8,
-    flex: 1,
-    marginRight: 8,
-    fontSize: 14,
-  },
-  saveButton: {
-    backgroundColor: '#1DB954',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    marginRight: 8,
-  },
-  saveButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
-  cancelButton: {
-    backgroundColor: '#333',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-  },
-  cancelButtonText: {
-    color: '#fff',
-    fontSize: 14,
-  },
-  followButton: {
-    backgroundColor: '#1DB954',
-    paddingVertical: 12,
-    paddingHorizontal: 40,
-    borderRadius: 24,
-    marginTop: 10,
-  },
-  followingButton: {
-    backgroundColor: '#333',
-    borderWidth: 1,
-    borderColor: '#555',
-  },
-  followButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 16,
-  },
-  followingButtonText: {
-    color: '#aaa',
-  },
-  listContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-  },
-  row: {
-    justifyContent: 'space-between',
-  },
-  postCard: {
-    width: CARD_WIDTH,
-    marginBottom: 16,
-    backgroundColor: '#111',
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  postThumbnail: {
-    width: CARD_WIDTH,
-    height: CARD_WIDTH,
-    backgroundColor: '#222',
-  },
-  firstDiscoverBadge: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    backgroundColor: 'rgba(29, 185, 84, 0.9)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  firstDiscoverText: {
-    color: '#000',
-    fontSize: 10,
-    fontWeight: 'bold',
+    marginRight: 12,
   },
   postInfo: {
-    padding: 12,
+    flex: 1,
   },
   postTitle: {
+    fontSize: 16,
+    fontWeight: '600',
     color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 14,
     marginBottom: 4,
   },
   postArtist: {
-    color: '#aaa',
-    fontSize: 12,
+    fontSize: 14,
+    color: '#888',
   },
-  emptyContainer: {
+  menuButton: {
+    padding: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  menuDots: {
+    fontSize: 24,
+    color: '#888',
+    lineHeight: 24,
+  },
+  empty: {
     padding: 40,
     alignItems: 'center',
   },
   emptyText: {
+    color: '#666',
+    fontSize: 16,
+  },
+  errorText: {
     color: '#666',
     fontSize: 16,
   },

@@ -330,6 +330,18 @@ def api_post():
 def api_profile(username):
     user = User.query.filter(func.lower(User.username) == username.lower()).first_or_404()
     posts = Post.query.filter_by(user_id=user.id).order_by(Post.timestamp.desc()).all()
+    
+    # Check if this is the current user's own profile (optional JWT)
+    is_own_profile = False
+    try:
+        from flask_jwt_extended import verify_jwt_in_request
+        verify_jwt_in_request(optional=True)
+        current_user_id = get_jwt_identity()
+        if current_user_id:
+            current_user_id = int(current_user_id)
+            is_own_profile = (current_user_id == user.id)
+    except:
+        pass  # Not logged in or invalid token
 
     return jsonify({
         'user': {
@@ -339,6 +351,7 @@ def api_profile(username):
             'followers': user.followers.count(),
             'following': user.following.count(),
         },
+        'is_own_profile': is_own_profile,
         'posts': [{
             'id': p.id,
             'title': p.title,
@@ -366,6 +379,24 @@ def api_follow(user_id):
     db.session.commit()
 
     return jsonify({'action': action, 'followers': target.followers.count()})
+
+# ---------- DELETE POST ----------
+@app.route('/api/post/<int:post_id>', methods=['DELETE'])
+@jwt_required()
+def api_delete_post(post_id):
+    """Delete a post. Only the post owner can delete their own posts."""
+    current_user_id = int(get_jwt_identity())
+    post = Post.query.get_or_404(post_id)
+    
+    # Check if the current user owns this post
+    if post.user_id != current_user_id:
+        return jsonify({'error': 'Unauthorized. You can only delete your own posts.'}), 403
+    
+    # Delete the post
+    db.session.delete(post)
+    db.session.commit()
+    
+    return jsonify({'success': True, 'message': 'Post deleted successfully'})
 
 # ---------- MIGRATION ENDPOINT (ONE-TIME USE) ----------
 @app.route('/api/migrate-artists', methods=['POST'])
