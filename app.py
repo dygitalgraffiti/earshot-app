@@ -525,35 +525,69 @@ def api_update_username():
 # ---------- DATABASE MIGRATION ----------
 @app.route('/api/migrate-device-id', methods=['POST'])
 def migrate_device_id():
-    """Add device_id column to user table if it doesn't exist."""
+    """Add device_id column and make password_hash nullable."""
+    results = []
     try:
-        # Check if column exists by querying the database schema
-        # PostgreSQL syntax
+        # 1. Check and add device_id column if it doesn't exist
         result = db.session.execute(text("""
             SELECT column_name 
             FROM information_schema.columns 
             WHERE table_name='user' AND column_name='device_id'
         """))
-        column_exists = result.fetchone() is not None
+        device_id_exists = result.fetchone() is not None
         
-        if column_exists:
-            return jsonify({'success': True, 'message': 'device_id column already exists'})
+        if not device_id_exists:
+            try:
+                db.session.execute(text('ALTER TABLE "user" ADD COLUMN device_id VARCHAR(200)'))
+                db.session.commit()
+                results.append('device_id column added successfully')
+            except Exception as e:
+                error_str = str(e).lower()
+                if 'duplicate column' in error_str or 'already exists' in error_str:
+                    results.append('device_id column already exists')
+                else:
+                    results.append(f'device_id error: {str(e)}')
+        else:
+            results.append('device_id column already exists')
         
-        # Column doesn't exist, add it
+        # 2. Make password_hash nullable if it's not already
         try:
-            db.session.execute(text('ALTER TABLE "user" ADD COLUMN device_id VARCHAR(200)'))
-            db.session.commit()
-            return jsonify({'success': True, 'message': 'device_id column added successfully'})
-        except Exception as e2:
-            # Column might have been added by another request, or different error
-            error_str = str(e2).lower()
-            if 'duplicate column' in error_str or 'already exists' in error_str:
-                return jsonify({'success': True, 'message': 'device_id column already exists'})
-            return jsonify({'error': f'Migration failed: {str(e2)}'}), 500
+            # Check if column is nullable
+            result = db.session.execute(text("""
+                SELECT is_nullable 
+                FROM information_schema.columns 
+                WHERE table_name='user' AND column_name='password_hash'
+            """))
+            nullable_info = result.fetchone()
+            
+            if nullable_info and nullable_info[0] == 'NO':
+                # Column exists but is NOT NULL, make it nullable
+                db.session.execute(text('ALTER TABLE "user" ALTER COLUMN password_hash DROP NOT NULL'))
+                db.session.commit()
+                results.append('password_hash made nullable')
+            elif nullable_info:
+                results.append('password_hash already nullable')
+            else:
+                results.append('password_hash column not found (unexpected)')
+        except Exception as e:
+            error_str = str(e).lower()
+            if 'does not exist' in error_str:
+                results.append('password_hash column not found')
+            else:
+                results.append(f'password_hash error: {str(e)}')
+        
+        return jsonify({
+            'success': True,
+            'message': 'Migration completed',
+            'results': results
+        })
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return jsonify({'error': f'Migration error: {str(e)}'}), 500
+        return jsonify({
+            'error': f'Migration error: {str(e)}',
+            'results': results
+        }), 500
 
 # ---------- MIGRATION ENDPOINT (ONE-TIME USE) ----------
 @app.route('/api/migrate-artists', methods=['POST'])
