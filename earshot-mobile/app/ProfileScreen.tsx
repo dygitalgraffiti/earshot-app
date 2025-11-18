@@ -10,6 +10,7 @@ import {
   Linking,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -47,6 +48,9 @@ export default function ProfileScreen() {
   const [loading, setLoading] = useState(true);
   const [token, setToken] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [isEditingUsername, setIsEditingUsername] = useState(false);
+  const [editedUsername, setEditedUsername] = useState('');
+  const [updatingUsername, setUpdatingUsername] = useState(false);
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -72,6 +76,7 @@ export default function ProfileScreen() {
           ...data,
           is_following: Boolean(data.is_following),
         });
+        setEditedUsername(data.user.username);
       } catch (e) {
         console.error('Profile error:', e);
         Alert.alert('Error', 'Failed to load profile');
@@ -213,6 +218,76 @@ export default function ProfileScreen() {
     }
   };
 
+  const updateUsername = async () => {
+    if (!token) {
+      Alert.alert('Error', 'You must be logged in to update your username');
+      return;
+    }
+
+    if (!profile) {
+      Alert.alert('Error', 'Profile not loaded');
+      return;
+    }
+
+    const trimmedUsername = editedUsername.trim().toLowerCase();
+    if (!trimmedUsername) {
+      Alert.alert('Error', 'Username cannot be empty');
+      return;
+    }
+
+    if (trimmedUsername === profile.user.username) {
+      setIsEditingUsername(false);
+      return;
+    }
+
+    setUpdatingUsername(true);
+    try {
+      const res = await fetch(`${API_URL}/api/profile/username`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ username: trimmedUsername }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        Alert.alert('Error', errorData.error || 'Failed to update username');
+        if (profile) {
+          setEditedUsername(profile.user.username); // Reset to original
+        }
+        setUpdatingUsername(false);
+        return;
+      }
+
+      const data = await res.json();
+      if (profile) {
+        setProfile({
+          ...profile,
+          user: {
+            ...profile.user,
+            username: data.username,
+          },
+        });
+      }
+      setEditedUsername(data.username);
+      setIsEditingUsername(false);
+      
+      // Update stored username
+      await AsyncStorage.setItem('currentUsername', data.username);
+      
+      Alert.alert('Success', 'Username updated!');
+    } catch (e) {
+      Alert.alert('Error', 'Failed to update username');
+      if (profile) {
+        setEditedUsername(profile.user.username); // Reset to original
+      }
+    } finally {
+      setUpdatingUsername(false);
+    }
+  };
+
   if (!profile) {
     return (
       <SafeAreaView style={styles.container}>
@@ -226,7 +301,53 @@ export default function ProfileScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.username}>@{profile.user.username}</Text>
+        <View style={styles.usernameRow}>
+          {isEditingUsername ? (
+            <View style={styles.usernameEditContainer}>
+              <TextInput
+                style={styles.usernameInput}
+                value={editedUsername}
+                onChangeText={setEditedUsername}
+                autoFocus
+                placeholder="Username"
+                placeholderTextColor="#666"
+              />
+              <TouchableOpacity
+                style={styles.saveButton}
+                onPress={updateUsername}
+                disabled={updatingUsername}
+              >
+                {updatingUsername ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.saveButtonText}>Save</Text>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => {
+                  setIsEditingUsername(false);
+                  setEditedUsername(profile.user.username);
+                }}
+                disabled={updatingUsername}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <>
+              <Text style={styles.username}>@{profile.user.username}</Text>
+              {profile.is_own_profile && (
+                <TouchableOpacity
+                  style={styles.editButton}
+                  onPress={() => setIsEditingUsername(true)}
+                >
+                  <Text style={styles.editButtonText}>✏️</Text>
+                </TouchableOpacity>
+              )}
+            </>
+          )}
+        </View>
         {profile.user.twitter && (
           <Text style={styles.twitter}>@{profile.user.twitter}</Text>
         )}
@@ -327,11 +448,61 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#222',
   },
+  usernameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
   username: {
     fontSize: 28,
     fontWeight: 'bold',
     color: '#1DB954',
-    marginBottom: 4,
+  },
+  editButton: {
+    marginLeft: 12,
+    padding: 4,
+  },
+  editButtonText: {
+    fontSize: 20,
+  },
+  usernameEditContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  usernameInput: {
+    backgroundColor: '#222',
+    color: '#fff',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    fontSize: 20,
+    fontWeight: 'bold',
+    minWidth: 150,
+    textAlign: 'center',
+  },
+  saveButton: {
+    backgroundColor: '#1DB954',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  saveButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  cancelButton: {
+    backgroundColor: '#333',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  cancelButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 14,
   },
   twitter: {
     fontSize: 16,
