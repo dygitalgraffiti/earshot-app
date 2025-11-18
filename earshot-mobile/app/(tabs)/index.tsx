@@ -1,10 +1,10 @@
 // app/(tabs)/index.tsx
 import { extractUrlFromText, parseMusicUrl } from '@/utils/urlParser';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
 import * as Linking from 'expo-linking';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -51,6 +51,7 @@ export default function HomeScreen() {
   const [feed, setFeed] = useState<Post[]>([]);
   const [url, setUrl] = useState('');
   const [username, setUsername] = useState('');
+  const [currentUsername, setCurrentUsername] = useState<string | null>(null); // Current logged-in username
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [currentPostIndex, setCurrentPostIndex] = useState(0);
   const [openingId, setOpeningId] = useState<number | null>(null);
@@ -79,10 +80,19 @@ export default function HomeScreen() {
         }
         setDeviceId(deviceIdValue);
 
-        // Try to load saved token
+        // Try to load saved token and username
         const savedToken = await AsyncStorage.getItem('authToken');
+        const savedUsername = await AsyncStorage.getItem('currentUsername');
+        if (savedUsername) {
+          setCurrentUsername(savedUsername);
+          console.log('Loaded saved username:', savedUsername);
+        }
         if (savedToken) {
           setToken(savedToken);
+          // If we don't have a username, try to get it from the feed or a user endpoint
+          if (!savedUsername) {
+            await fetchCurrentUsername(savedToken);
+          }
           await loadFeed(savedToken);
         } else {
           // Auto-login with device ID if no token
@@ -155,6 +165,19 @@ export default function HomeScreen() {
 
     handleShareIntent();
   }, []);
+
+  // Reload username when screen comes into focus (e.g., returning from profile)
+  useFocusEffect(
+    useCallback(() => {
+      const reloadUsername = async () => {
+        const savedUsername = await AsyncStorage.getItem('currentUsername');
+        if (savedUsername) {
+          setCurrentUsername(savedUsername);
+        }
+      };
+      reloadUsername();
+    }, [])
+  );
 
   const handleIncomingShare = async (sharedData: string) => {
     try {
@@ -290,6 +313,26 @@ export default function HomeScreen() {
   };
 
   /* ────── AUTH ────── */
+  const fetchCurrentUsername = async (t: string) => {
+    try {
+      const res = await fetch(`${API_URL}/api/me`, {
+        headers: { Authorization: `Bearer ${t}` },
+      });
+      if (res.ok) {
+        const userData = await res.json();
+        if (userData.username) {
+          console.log('Fetched current username:', userData.username);
+          setCurrentUsername(userData.username);
+          await AsyncStorage.setItem('currentUsername', userData.username);
+        }
+      } else {
+        console.warn('Failed to fetch current user, status:', res.status);
+      }
+    } catch (e) {
+      console.warn('Failed to fetch username:', e);
+    }
+  };
+
   const login = async (deviceIdParam?: string) => {
     const deviceIdToUse = deviceIdParam || deviceId;
     if (!deviceIdToUse || typeof deviceIdToUse !== 'string') {
@@ -333,6 +376,8 @@ export default function HomeScreen() {
         // Update username if it was auto-generated
         if (data.user && data.user.username) {
           setUsername(data.user.username);
+          setCurrentUsername(data.user.username);
+          await AsyncStorage.setItem('currentUsername', data.user.username);
         }
         await loadFeed(data.token);
       } else {
@@ -648,8 +693,28 @@ export default function HomeScreen() {
       <View style={[styles.container, { paddingTop: insets.top, position: 'relative' }]}>
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.logo}>Earshot</Text>
-          <Text style={styles.slogan}>Share music. Follow friends.</Text>
+          <View style={styles.headerContent}>
+            <View style={styles.headerLeft} />
+            <View style={styles.headerCenter}>
+              <Text style={styles.logo}>Earshot</Text>
+              <Text style={styles.slogan}>Share music. Follow friends.</Text>
+            </View>
+            <View style={styles.headerRight}>
+              {currentUsername ? (
+                <TouchableOpacity
+                  style={styles.profileButton}
+                  onPress={() => {
+                    console.log('Profile icon pressed, navigating to:', currentUsername);
+                    navigation.navigate('ProfileScreen', { username: currentUsername });
+                  }}
+                >
+                  <Text style={styles.profileIcon}>👤</Text>
+                </TouchableOpacity>
+              ) : (
+                <View style={styles.profileButtonPlaceholder} />
+              )}
+            </View>
+          </View>
         </View>
 
         {/* Vinyl Record Stack */}
@@ -791,7 +856,40 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 8,
     paddingBottom: 4,
+  },
+  headerContent: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  headerLeft: {
+    width: 40,
+  },
+  headerCenter: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  headerRight: {
+    width: 40,
+    alignItems: 'flex-end',
+  },
+  profileButtonPlaceholder: {
+    width: 32,
+    height: 32,
+  },
+  profileButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#1DB954',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  profileIcon: {
+    fontSize: 20,
+    color: '#fff',
   },
   vinylContainer: {
     flex: 1,
