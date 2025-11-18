@@ -372,27 +372,58 @@ export default function HomeScreen() {
   const panGesture = Gesture.Pan()
     .onUpdate(e => {
       translateY.value = e.translationY;
-      rotateZ.value = e.translationX * 0.1;
-      scale.value = 1 - Math.abs(e.translationY) / 1000;
-      opacity.value = 1 - Math.abs(e.translationY) / 800;
+      // More dramatic rotation for swooshing effect
+      rotateZ.value = e.translationX * 0.2;
+      // More pronounced scale effect
+      scale.value = 1 - Math.abs(e.translationY) / 600;
+      // More dramatic opacity fade
+      opacity.value = 1 - Math.abs(e.translationY) / 500;
     })
     .onEnd(e => {
-      const threshold = 100;
+      // Lower threshold for easier swiping (was 100, now 50)
+      const threshold = 50;
       if (e.translationY > threshold && hasNext) {
-        translateY.value = withSpring(height);
-        rotateZ.value = withSpring(360);
-        opacity.value = withTiming(0);
+        // More dramatic exit animation
+        translateY.value = withSpring(height * 1.2, {
+          damping: 15,
+          stiffness: 100,
+        });
+        rotateZ.value = withSpring(720, {
+          damping: 15,
+          stiffness: 100,
+        });
+        opacity.value = withTiming(0, { duration: 200 });
         runOnJS(goToNext)();
       } else if (e.translationY < -threshold && hasPrevious) {
-        translateY.value = withSpring(-height);
-        rotateZ.value = withSpring(-360);
-        opacity.value = withTiming(0);
+        // More dramatic exit animation
+        translateY.value = withSpring(-height * 1.2, {
+          damping: 15,
+          stiffness: 100,
+        });
+        rotateZ.value = withSpring(-720, {
+          damping: 15,
+          stiffness: 100,
+        });
+        opacity.value = withTiming(0, { duration: 200 });
         runOnJS(goToPrevious)();
       } else {
-        translateY.value = withSpring(0);
-        rotateZ.value = withSpring(0);
-        scale.value = withSpring(1);
-        opacity.value = withSpring(1);
+        // Snappy return animation
+        translateY.value = withSpring(0, {
+          damping: 20,
+          stiffness: 150,
+        });
+        rotateZ.value = withSpring(0, {
+          damping: 20,
+          stiffness: 150,
+        });
+        scale.value = withSpring(1, {
+          damping: 20,
+          stiffness: 150,
+        });
+        opacity.value = withSpring(1, {
+          damping: 20,
+          stiffness: 150,
+        });
       }
     });
 
@@ -512,24 +543,10 @@ export default function HomeScreen() {
           <Text style={styles.slogan}>Share music. Follow friends.</Text>
         </View>
 
-        {/* Post Input */}
-        <View style={styles.postBox}>
-          <TextInput
-            placeholder="Paste YouTube/Spotify link..."
-            value={url}
-            onChangeText={setUrl}
-            style={styles.input}
-            placeholderTextColor="#666"
-          />
-          <TouchableOpacity style={styles.postBtn} onPress={postTrack}>
-            <Text style={styles.postBtnText}>POST</Text>
-          </TouchableOpacity>
-        </View>
-
         {/* Vinyl Record Stack */}
         <GestureHandlerRootView style={{ flex: 1 }}>
-          <View style={styles.vinylContainer}>
-            <GestureDetector gesture={panGesture}>
+          <GestureDetector gesture={panGesture}>
+            <View style={styles.vinylContainer}>
               <Animated.View style={[styles.vinylWrapper, animatedStyle]}>
               {/* Vinyl Record */}
               <View style={styles.vinyl}>
@@ -571,16 +588,16 @@ export default function HomeScreen() {
                 </TouchableOpacity>
               </View>
               </Animated.View>
-            </GestureDetector>
-          </View>
+            
+            {/* Swipe Hint - positioned at the bottom */}
+            {hasNext && (
+              <View style={[styles.swipeHintContainer, { bottom: 50 }]}>
+                <Text style={styles.swipeHint}>↓ Swipe for next</Text>
+              </View>
+            )}
+            </View>
+          </GestureDetector>
         </GestureHandlerRootView>
-
-        {/* Swipe Hint - positioned between play button and bottom */}
-        {hasNext && (
-          <View style={[styles.swipeHintContainer, { bottom: 80 + insets.bottom }]}>
-            <Text style={[styles.swipeHint, { fontSize: 14, color: '#1DB954' }]}>↓ Swipe for next</Text>
-          </View>
-        )}
       </View>
     </SafeAreaProvider>
   );
@@ -638,27 +655,13 @@ const styles = StyleSheet.create({
     paddingBottom: 4,
     alignItems: 'center',
   },
-  postBox: {
-    paddingHorizontal: 20,
-    marginBottom: 12,
-  },
-  postBtn: {
-    backgroundColor: '#1DB954',
-    padding: 12,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  postBtnText: {
-    color: '#fff',
-    fontWeight: 'bold',
-  },
   vinylContainer: {
     flex: 1,
     justifyContent: 'flex-start',
     alignItems: 'center',
     paddingTop: 10,
     paddingBottom: 20,
+    position: 'relative',
   },
   vinylWrapper: {
     width: VINYL_SIZE,
@@ -725,7 +728,7 @@ const styles = StyleSheet.create({
   },
   infoOverlay: {
     position: 'absolute',
-    bottom: -80,
+    bottom: -160,
     width: '100%',
     alignItems: 'center',
     paddingHorizontal: 20,
