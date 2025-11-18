@@ -12,7 +12,7 @@ from flask import (
     url_for, flash, jsonify, abort, Response
 )
 from flask_jwt_extended import (
-    JWTManager, create_access_token, jwt_required, get_jwt_identity, verify_jwt_in_request
+    JWTManager, create_access_token, jwt_required, get_jwt_identity
 )
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
@@ -104,41 +104,93 @@ def parse_track_url(url: str):
         try:
             o = requests.get(f"https://open.spotify.com/oembed?url={url}").json()
             full = o['title']
-            if ' · ' in full:
-                song, artist = [x.strip() for x in full.split(' · ', 1)]
-            else:
-                song, artist = full, 'Unknown Artist'
+            # Spotify oembed format: "Song Name · Artist Name"
+            # Try multiple separators
+            artist = 'Unknown Artist'
+            song = full
+            for sep in [' · ', ' - ', ' | ', ' — ', ' – ']:
+                if sep in full:
+                    parts = [x.strip() for x in full.split(sep, 1)]
+                    if len(parts) == 2:
+                        # Usually format is "Song · Artist", but sometimes "Artist - Song"
+                        # Check which part looks more like an artist (shorter, or contains common artist indicators)
+                        if len(parts[0]) < len(parts[1]) or 'feat' in parts[0].lower() or 'ft.' in parts[0].lower():
+                            song, artist = parts[1], parts[0]
+                        else:
+                            song, artist = parts[0], parts[1]
+                        break
             return 'spotify', {
                 'title': song,
                 'artist': artist,
                 'thumbnail': o['thumbnail_url'],
                 'embed_url': f"https://open.spotify.com/embed/track/{track_id}"
             }
-        except: return None, None
+        except Exception as e:
+            print(f"Spotify parsing error: {e}")
+            return None, None
 
     if any(x in url for x in ['youtube.com', 'youtu.be', 'music.youtube.com']):
         m = re.search(r'(?:v=|youtu\.be/|youtube\.com/embed/)([a-zA-Z0-9_-]+)', url)
         if not m: return None, None
         video_id = m.group(1)
         try:
-            o = requests.get(f"https://www.youtube.com/oembed?url={url}&format=json").json()
-            full = o['title']
-            for sep in [' - ', ' · ', ' | ', ' — ']:
-                if sep in full:
-                    artist, title = [x.strip() for x in full.rsplit(sep, 1)]
-                    return 'youtube', {
-                        'title': title or full,
-                        'artist': artist or 'Unknown Artist',
-                        'thumbnail': o['thumbnail_url'],
-                        'embed_url': f"https://www.youtube.com/embed/{video_id}"
-                    }
-            return 'youtube', {
-                'title': full,
-                'artist': 'Unknown Artist',
-                'thumbnail': o['thumbnail_url'],
-                'embed_url': f"https://www.youtube.com/embed/{video_id}"
+            # Use yt-dlp to get better metadata (especially for YouTube Music)
+            ydl_opts = {
+                'quiet': True,
+                'no_warnings': True,
+                'extract_flat': False,
             }
-        except: return None, None
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+                title = info.get('title', 'Unknown Title')
+                artist = info.get('artist') or info.get('channel') or info.get('uploader') or 'Unknown Artist'
+                thumbnail = info.get('thumbnail') or f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
+                uploader = info.get('uploader') or info.get('channel')
+                
+                # If artist not found in metadata or is just the uploader/channel, try parsing from title
+                if not info.get('artist') or (uploader and artist == uploader):
+                    for sep in [' - ', ' · ', ' | ', ' — ', ' – ', ' by ']:
+                        if sep in title:
+                            parts = [x.strip() for x in title.rsplit(sep, 1)]
+                            if len(parts) == 2:
+                                # Common formats: "Artist - Song" or "Song - Artist"
+                                # Usually the first part is artist, but check length
+                                if len(parts[0]) < 50:  # Artist names are usually shorter
+                                    artist, title = parts[0], parts[1]
+                                else:
+                                    title, artist = parts[0], parts[1]
+                                break
+                
+                return 'youtube', {
+                    'title': title,
+                    'artist': artist,
+                    'thumbnail': thumbnail,
+                    'embed_url': f"https://www.youtube.com/embed/{video_id}"
+                }
+        except Exception as e:
+            print(f"YouTube parsing error: {e}")
+            # Fallback to oembed if yt-dlp fails
+            try:
+                o = requests.get(f"https://www.youtube.com/oembed?url={url}&format=json").json()
+                full = o['title']
+                artist = 'Unknown Artist'
+                for sep in [' - ', ' · ', ' | ', ' — ', ' – ']:
+                    if sep in full:
+                        parts = [x.strip() for x in full.rsplit(sep, 1)]
+                        if len(parts) == 2:
+                            if len(parts[0]) < 50:
+                                artist, full = parts[0], parts[1]
+                            else:
+                                full, artist = parts[0], parts[1]
+                            break
+                return 'youtube', {
+                    'title': full,
+                    'artist': artist,
+                    'thumbnail': o['thumbnail_url'],
+                    'embed_url': f"https://www.youtube.com/embed/{video_id}"
+                }
+            except:
+                return None, None
 
     if 'music.apple.com' in url:
         m = re.search(r'music\.apple\.com/[^/]+/song/(\d+)', url)
@@ -268,24 +320,6 @@ def api_profile(username):
     user = User.query.filter(func.lower(User.username) == username.lower()).first_or_404()
     posts = Post.query.filter_by(user_id=user.id).order_by(Post.timestamp.desc()).all()
 
-    # Check if user is authenticated and get follow status
-    is_following = False
-    is_own_profile = False
-    try:
-        verify_jwt_in_request(optional=True)
-        current_user_id = get_jwt_identity()
-        if current_user_id:
-            try:
-                current_user = User.query.get(int(current_user_id))
-                if current_user:
-                    is_own_profile = current_user.id == user.id
-                    if not is_own_profile:
-                        is_following = current_user.is_following(user)
-            except (ValueError, TypeError):
-                pass  # Invalid user ID
-    except:
-        pass  # Not authenticated or invalid token
-
     return jsonify({
         'user': {
             'id': user.id,
@@ -293,8 +327,6 @@ def api_profile(username):
             'twitter': user.twitter or '',
             'followers': user.followers.count(),
             'following': user.following.count(),
-            'is_following': is_following,
-            'is_own_profile': is_own_profile,
         },
         'posts': [{
             'id': p.id,
@@ -309,7 +341,7 @@ def api_profile(username):
 @app.route('/api/follow/<int:user_id>', methods=['POST'])
 @jwt_required()
 def api_follow(user_id):
-    current_user = User.query.get(int(get_jwt_identity()))
+    current_user = User.query.get(get_jwt_identity())
     target = User.query.get_or_404(user_id)
     if current_user.id == target.id:
         return jsonify({'error': 'Cannot follow self'}), 400
@@ -322,24 +354,7 @@ def api_follow(user_id):
         action = 'followed'
     db.session.commit()
 
-    return jsonify({'action': action, 'followers': target.followers.count(), 'is_following': action == 'followed'})
-
-@app.route('/api/profile/twitter', methods=['PUT'])
-@jwt_required()
-def api_update_twitter():
-    current_user = User.query.get(int(get_jwt_identity()))
-    data = request.get_json()
-    twitter_handle = data.get('twitter', '').strip()
-    
-    # Remove @ if present and validate
-    twitter_handle = twitter_handle.lstrip('@')
-    if twitter_handle and len(twitter_handle) > 100:
-        return jsonify({'error': 'Twitter handle too long'}), 400
-    
-    current_user.twitter = twitter_handle if twitter_handle else None
-    db.session.commit()
-    
-    return jsonify({'success': True, 'twitter': current_user.twitter or ''})
+    return jsonify({'action': action, 'followers': target.followers.count()})
 
 # ---------- RUN ----------
 if __name__ == '__main__':

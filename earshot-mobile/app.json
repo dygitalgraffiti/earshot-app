@@ -11,8 +11,15 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSUserActivityTypes": ["INSendMessageIntent"]
-      }
+        "NSUserActivityTypes": [
+          "INSendMessageIntent",
+          "INSendMessageIntent",
+          "INSendMessageIntent",
+          "INSendMessageIntent"
+        ],
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "bundleIdentifier": "com.anonymous.earshotmobile"
     },
     "android": {
       "adaptiveIcon": {
@@ -26,14 +33,28 @@
       "intentFilters": [
         {
           "action": "android.intent.action.SEND",
-          "category": ["android.intent.category.DEFAULT"],
+          "category": [
+            "android.intent.category.DEFAULT"
+          ],
+          "data": [
+            {
+              "mimeType": "text/plain"
+            }
+          ]
+        },
+        {
+          "action": "android.intent.action.SEND",
+          "category": [
+            "android.intent.category.DEFAULT"
+          ],
           "data": [
             {
               "mimeType": "text/plain"
             }
           ]
         }
-      ]
+      ],
+      "package": "com.anonymous.earshotmobile"
     },
     "web": {
       "output": "static",
@@ -57,6 +78,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "743ec4c5-d2fa-44b8-9592-4da81bf125b1"
+      }
     }
   }
 }

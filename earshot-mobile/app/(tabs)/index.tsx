@@ -252,14 +252,17 @@ export default function HomeScreen() {
       });
       
       if (!res.ok) {
-        console.error('Feed API error:', res.status, res.statusText);
         if (res.status === 401) {
-          // Token expired, clear it
+          // Token expired, clear it silently
+          console.log('Token expired, clearing auth');
           await AsyncStorage.removeItem('authToken');
           setToken(null);
-          Alert.alert('Session Expired', 'Please log in again');
+          setFeed([]);
+          // Don't show alert here - let user continue using app
+          // They'll see login screen on next interaction
           return;
         }
+        console.error('Feed API error:', res.status, res.statusText);
         throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }
       
@@ -286,24 +289,59 @@ export default function HomeScreen() {
   };
 
   const postTrack = async () => {
-    if (!url.trim()) return;
+    console.log('postTrack called, url:', url, 'token exists:', !!token);
+    
+    if (!url.trim()) {
+      Alert.alert('Empty URL', 'Please enter a URL to post');
+      return;
+    }
+    
+    if (!token) {
+      Alert.alert('Not Logged In', 'Please log in to post');
+      return;
+    }
+
     try {
+      console.log('Posting track:', url.trim());
       const res = await fetch(`${API_URL}/api/post`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token!}`,
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ url: url.trim() }),
       });
+      
+      if (!res.ok) {
+        if (res.status === 401) {
+          // Token expired
+          await AsyncStorage.removeItem('authToken');
+          setToken(null);
+          Alert.alert('Session Expired', 'Please log in again to post');
+          return;
+        }
+        const errorData = await res.json().catch(() => ({ error: 'Unknown error' }));
+        Alert.alert('Post Failed', errorData.error || `HTTP ${res.status}`);
+        return;
+      }
+
       const data = await res.json();
       if (data.success) {
         Alert.alert('Posted!', `${data.post.title}`);
         setUrl('');
-        loadFeed(token!);
+        // Reload feed - if token expired, loadFeed will handle it
+        try {
+          await loadFeed(token);
+        } catch (e) {
+          // Feed reload failed (likely token expired), but post was successful
+          console.log('Feed reload failed after post, but post was successful');
+        }
+      } else {
+        Alert.alert('Post Failed', data.error || 'Unknown error');
       }
-    } catch {
-      Alert.alert('Post Failed', 'Try again');
+    } catch (e) {
+      console.error('Post error:', e);
+      Alert.alert('Post Failed', e instanceof Error ? e.message : 'Network error. Try again.');
     }
   };
 
@@ -467,7 +505,7 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaProvider style={{ flex: 1, backgroundColor: '#000' }}>
-      <View style={[styles.container, { paddingTop: insets.top }]}>
+      <View style={[styles.container, { paddingTop: insets.top, position: 'relative' }]}>
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.logo}>Earshot</Text>
@@ -537,10 +575,10 @@ export default function HomeScreen() {
           </View>
         </GestureHandlerRootView>
 
-        {/* Swipe Hint */}
+        {/* Swipe Hint - positioned between play button and bottom */}
         {hasNext && (
-          <View style={styles.footer}>
-            <Text style={styles.progress}>↓ Swipe for next</Text>
+          <View style={[styles.swipeHintContainer, { bottom: 80 + insets.bottom }]}>
+            <Text style={[styles.swipeHint, { fontSize: 14, color: '#1DB954' }]}>↓ Swipe for next</Text>
           </View>
         )}
       </View>
@@ -687,7 +725,7 @@ const styles = StyleSheet.create({
   },
   infoOverlay: {
     position: 'absolute',
-    bottom: -140,
+    bottom: -80,
     width: '100%',
     alignItems: 'center',
     paddingHorizontal: 20,
@@ -723,9 +761,22 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 14,
   },
+  swipeHintContainer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+  },
+  swipeHint: {
+    color: '#666',
+    fontSize: 12,
+    textAlign: 'center',
+  },
   footer: {
     paddingHorizontal: 20,
-    paddingTop: 10,
+    paddingTop: 0,
     paddingBottom: 10,
     alignItems: 'center',
   },
