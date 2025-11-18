@@ -12,7 +12,11 @@ from flask import (
     url_for, flash, jsonify, abort, Response
 )
 from flask_jwt_extended import (
-    JWTManager, create_access_token, jwt_required, get_jwt_identity
+    JWTManager,
+    create_access_token,
+    jwt_required,
+    get_jwt_identity,
+    verify_jwt_in_request,
 )
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
@@ -333,13 +337,17 @@ def api_profile(username):
     
     # Check if this is the current user's own profile (optional JWT)
     is_own_profile = False
+    is_following = False
     try:
-        from flask_jwt_extended import verify_jwt_in_request
         verify_jwt_in_request(optional=True)
         current_user_id = get_jwt_identity()
         if current_user_id:
             current_user_id = int(current_user_id)
             is_own_profile = (current_user_id == user.id)
+            if not is_own_profile:
+                current_user = User.query.get(current_user_id)
+                if current_user:
+                    is_following = current_user.is_following(user)
     except:
         pass  # Not logged in or invalid token
 
@@ -352,12 +360,14 @@ def api_profile(username):
             'following': user.following.count(),
         },
         'is_own_profile': is_own_profile,
+        'is_following': is_following,
         'posts': [{
             'id': p.id,
             'title': p.title,
             'artist': p.artist,
             'thumbnail': p.thumbnail,
             'url': p.url,
+            'createdAt': p.timestamp.isoformat(),
             'is_first_discover': Post.query.filter_by(url=p.url).count() == 1
         } for p in posts]
     })
