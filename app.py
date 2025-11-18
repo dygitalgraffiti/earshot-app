@@ -319,15 +319,14 @@ def api_login():
         try:
             user = User.query.filter_by(device_id=device_id).first()
         except Exception as e:
-            # Database column might not exist yet - try to create it
+            # Database column might not exist yet
             print(f"Database error (device_id column might be missing): {e}")
-            try:
-                with app.app_context():
-                    db.create_all()  # This will add the device_id column if it doesn't exist
-                user = User.query.filter_by(device_id=device_id).first()
-            except Exception as e2:
-                print(f"Failed to create database columns: {e2}")
-                return jsonify({'error': 'Database migration needed. Please contact support.'}), 500
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'error': 'Database migration needed. Please run: POST /api/migrate-device-id',
+                'details': str(e)
+            }), 500
         
         if user:
             # Existing user - update username if provided and different
@@ -528,27 +527,32 @@ def api_update_username():
 def migrate_device_id():
     """Add device_id column to user table if it doesn't exist."""
     try:
-        # Check if column exists by trying to query it
-        try:
-            User.query.limit(1).all()
-            # Try to access device_id on a user
-            test_user = User.query.first()
-            if test_user and not hasattr(test_user, 'device_id'):
-                raise AttributeError("device_id column missing")
-        except (AttributeError, Exception) as e:
-            # Column doesn't exist, add it
-            try:
-                db.session.execute(text('ALTER TABLE "user" ADD COLUMN device_id VARCHAR(200)'))
-                db.session.commit()
-                return jsonify({'success': True, 'message': 'device_id column added successfully'})
-            except Exception as e2:
-                # Column might already exist or different error
-                if 'duplicate column' in str(e2).lower() or 'already exists' in str(e2).lower():
-                    return jsonify({'success': True, 'message': 'device_id column already exists'})
-                return jsonify({'error': f'Migration failed: {str(e2)}'}), 500
+        # Check if column exists by querying the database schema
+        # PostgreSQL syntax
+        result = db.session.execute(text("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name='user' AND column_name='device_id'
+        """))
+        column_exists = result.fetchone() is not None
         
-        return jsonify({'success': True, 'message': 'device_id column already exists'})
+        if column_exists:
+            return jsonify({'success': True, 'message': 'device_id column already exists'})
+        
+        # Column doesn't exist, add it
+        try:
+            db.session.execute(text('ALTER TABLE "user" ADD COLUMN device_id VARCHAR(200)'))
+            db.session.commit()
+            return jsonify({'success': True, 'message': 'device_id column added successfully'})
+        except Exception as e2:
+            # Column might have been added by another request, or different error
+            error_str = str(e2).lower()
+            if 'duplicate column' in error_str or 'already exists' in error_str:
+                return jsonify({'success': True, 'message': 'device_id column already exists'})
+            return jsonify({'error': f'Migration failed: {str(e2)}'}), 500
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': f'Migration error: {str(e)}'}), 500
 
 # ---------- MIGRATION ENDPOINT (ONE-TIME USE) ----------
