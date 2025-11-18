@@ -356,6 +356,87 @@ def api_follow(user_id):
 
     return jsonify({'action': action, 'followers': target.followers.count()})
 
+# ---------- MIGRATION ENDPOINT (ONE-TIME USE) ----------
+@app.route('/api/migrate-artists', methods=['POST'])
+def migrate_artists_endpoint():
+    """
+    One-time migration endpoint to update artist names for existing posts.
+    Requires a secret key to prevent unauthorized access.
+    Call this once after deploying improved artist extraction logic.
+    """
+    # Simple security: require a secret key in the request
+    secret_key = request.json.get('secret_key') if request.is_json else request.form.get('secret_key')
+    expected_key = os.environ.get('MIGRATION_SECRET', 'earshot-migration-2025')
+    
+    if secret_key != expected_key:
+        return jsonify({'error': 'Unauthorized. Secret key required.'}), 401
+    
+    try:
+        posts = Post.query.all()
+        total = len(posts)
+        updated = 0
+        failed = 0
+        skipped = 0
+        results = []
+        
+        for i, post in enumerate(posts, 1):
+            try:
+                platform, info = parse_track_url(post.url)
+                
+                if not info:
+                    results.append(f"Failed to parse post #{post.id}")
+                    failed += 1
+                    continue
+                
+                new_artist = info.get('artist', 'Unknown Artist')
+                new_title = info.get('title', post.title)
+                new_thumbnail = info.get('thumbnail', post.thumbnail)
+                
+                should_update = False
+                changes = []
+                
+                if new_artist != 'Unknown Artist' and new_artist != post.artist:
+                    should_update = True
+                    changes.append(f"artist: '{post.artist}' → '{new_artist}'")
+                    post.artist = new_artist
+                
+                if new_title != post.title:
+                    should_update = True
+                    changes.append(f"title updated")
+                    post.title = new_title
+                
+                if new_thumbnail != post.thumbnail:
+                    should_update = True
+                    changes.append("thumbnail updated")
+                    post.thumbnail = new_thumbnail
+                
+                if should_update:
+                    db.session.commit()
+                    results.append(f"Updated post #{post.id}: {', '.join(changes)}")
+                    updated += 1
+                else:
+                    skipped += 1
+                    
+            except Exception as e:
+                results.append(f"Error processing post #{post.id}: {str(e)}")
+                db.session.rollback()
+                failed += 1
+                continue
+        
+        return jsonify({
+            'success': True,
+            'summary': {
+                'total': total,
+                'updated': updated,
+                'skipped': skipped,
+                'failed': failed
+            },
+            'results': results[:50]  # Limit to first 50 results to avoid huge response
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'Migration failed: {str(e)}'}), 500
+
 # ---------- RUN ----------
 if __name__ == '__main__':
     with app.app_context():
