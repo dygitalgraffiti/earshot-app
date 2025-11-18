@@ -58,6 +58,7 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(true);
   const [isFlipped, setIsFlipped] = useState(false);
   const [listenerCount, setListenerCount] = useState(35);
+  const [feedType, setFeedType] = useState<'global' | 'following'>('global'); // Feed type: global or following
 
   // Animation values
   const translateY = useSharedValue(0);
@@ -391,10 +392,10 @@ export default function HomeScreen() {
     }
   };
 
-  const loadFeed = async (t: string) => {
+  const loadFeed = async (t: string, type: 'global' | 'following' = feedType) => {
     try {
       setLoading(true);
-      const res = await fetch(`${API_URL}/api/feed`, {
+      const res = await fetch(`${API_URL}/api/feed?type=${type}`, {
         headers: { Authorization: `Bearer ${t}` },
       });
       
@@ -697,7 +698,37 @@ export default function HomeScreen() {
             <View style={styles.headerLeft} />
             <View style={styles.headerCenter}>
               <Text style={styles.logo}>Earshot</Text>
-              <Text style={styles.slogan}>Share music. Follow friends.</Text>
+              <View style={styles.feedTabs}>
+                <TouchableOpacity
+                  style={[styles.feedTab, feedType === 'global' && styles.feedTabActive]}
+                  onPress={() => {
+                    setFeedType('global');
+                    setCurrentPostIndex(0);
+                    if (token) {
+                      loadFeed(token, 'global');
+                    }
+                  }}
+                >
+                  <Text style={[styles.feedTabText, feedType === 'global' && styles.feedTabTextActive]}>
+                    Global Feed
+                  </Text>
+                </TouchableOpacity>
+                <Text style={styles.feedTabDivider}>|</Text>
+                <TouchableOpacity
+                  style={[styles.feedTab, feedType === 'following' && styles.feedTabActive]}
+                  onPress={() => {
+                    setFeedType('following');
+                    setCurrentPostIndex(0);
+                    if (token) {
+                      loadFeed(token, 'following');
+                    }
+                  }}
+                >
+                  <Text style={[styles.feedTabText, feedType === 'following' && styles.feedTabTextActive]}>
+                    Following
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
             <View style={styles.headerRight}>
               {currentUsername ? (
@@ -818,6 +849,34 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 8,
   },
+  feedTabs: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  feedTab: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  feedTabActive: {
+    // Active state styling handled by text color
+  },
+  feedTabText: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '500',
+  },
+  feedTabTextActive: {
+    color: '#1DB954',
+    fontWeight: 'bold',
+  },
+  feedTabDivider: {
+    fontSize: 14,
+    color: '#444',
+    marginHorizontal: 8,
+  },
   slogan: {
     fontSize: 14,
     color: '#888',
@@ -859,7 +918,7 @@ const styles = StyleSheet.create({
   },
   headerContent: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
   },
   headerLeft: {
@@ -872,6 +931,8 @@ const styles = StyleSheet.create({
   headerRight: {
     width: 40,
     alignItems: 'flex-end',
+    justifyContent: 'flex-start',
+    paddingTop: 10,
   },
   profileButtonPlaceholder: {
     width: 32,
