@@ -42,6 +42,13 @@ db = SQLAlchemy(app)
 jwt = JWTManager(app)
 
 # ---------- MODELS ----------
+# Define follow table first (before User class)
+follow = db.Table(
+    'follow',
+    db.Column('follower_id', db.Integer, db.ForeignKey('user.id'), primary_key=True),
+    db.Column('followed_id', db.Integer, db.ForeignKey('user.id'), primary_key=True)
+)
+
 class User(db.Model):
     __tablename__ = 'user'
     id = db.Column(db.Integer, primary_key=True)
@@ -53,7 +60,7 @@ class User(db.Model):
 
     # Relationships
     following = db.relationship(
-        'User', secondary='follow',
+        'User', secondary=follow,
         primaryjoin=('follow.c.follower_id == user.c.id'),
         secondaryjoin=('follow.c.followed_id == user.c.id'),
         backref=db.backref('followers', lazy='dynamic'),
@@ -70,11 +77,6 @@ class User(db.Model):
 
     def is_following(self, user):
         return self.following.filter(follow.c.followed_id == user.id).count() > 0
-
-class Follow(db.Model):
-    __tablename__ = 'follow'
-    follower_id = db.Column(db.Integer, db.ForeignKey('user.id'), primary_key=True)
-    followed_id = db.Column(db.Integer, db.ForeignKey('user.id'), primary_key=True)
 
 class Post(db.Model):
     __tablename__ = 'post'

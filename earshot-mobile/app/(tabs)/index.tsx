@@ -594,32 +594,6 @@ export default function HomeScreen() {
                         {/* Center Hole */}
                         <View style={styles.centerHole} />
                       </View>
-
-                      {/* Info Overlay */}
-                      <View style={styles.infoOverlay}>
-                        <Text style={styles.title} numberOfLines={2}>
-                          {currentPost.title}
-                        </Text>
-                        {showArtist && (
-                          <Text style={styles.artist} numberOfLines={1}>
-                            {currentPost.artist}
-                          </Text>
-                        )}
-                        <TouchableOpacity onPress={() => openProfile(currentPost.username)}>
-                          <Text style={styles.username}>@{currentPost.username}</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={styles.playButton}
-                          onPress={() => playSong(currentPost)}
-                          disabled={openingId === currentPost.id}
-                        >
-                          {openingId === currentPost.id ? (
-                            <ActivityIndicator color="#fff" />
-                          ) : (
-                            <Text style={styles.playText}>▶ Play</Text>
-                          )}
-                        </TouchableOpacity>
-                      </View>
                     </Animated.View>
 
                     <Animated.View style={[styles.flipFace, styles.flipBack, backFlipStyle]}>
@@ -629,6 +603,32 @@ export default function HomeScreen() {
                     </Animated.View>
                   </View>
                 </TouchableWithoutFeedback>
+
+                {/* Info Overlay - Always visible, outside flip container */}
+                <View style={styles.infoOverlay}>
+                  <Text style={styles.title} numberOfLines={2}>
+                    {currentPost.title}
+                  </Text>
+                  {showArtist && (
+                    <Text style={styles.artist} numberOfLines={1}>
+                      {currentPost.artist}
+                    </Text>
+                  )}
+                  <TouchableOpacity onPress={() => openProfile(currentPost.username)}>
+                    <Text style={styles.username}>@{currentPost.username}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.playButton}
+                    onPress={() => playSong(currentPost)}
+                    disabled={openingId === currentPost.id}
+                  >
+                    {openingId === currentPost.id ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <Text style={styles.playText}>▶ Play</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
               </Animated.View>
 
               {/* Swipe Hint - positioned at the bottom */}
