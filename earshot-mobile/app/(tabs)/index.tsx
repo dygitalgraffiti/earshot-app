@@ -292,24 +292,36 @@ export default function HomeScreen() {
   /* ────── AUTH ────── */
   const login = async (deviceIdParam?: string) => {
     const deviceIdToUse = deviceIdParam || deviceId;
-    if (!deviceIdToUse) {
+    if (!deviceIdToUse || typeof deviceIdToUse !== 'string') {
       Alert.alert('Error', 'Device ID not available');
       setLoading(false);
       return;
     }
     try {
+      // Prepare request body - only include username if it's not empty
+      const requestBody: { device_id: string; username?: string } = {
+        device_id: String(deviceIdToUse),
+      };
+      
+      const trimmedUsername = username.trim();
+      if (trimmedUsername) {
+        requestBody.username = trimmedUsername;
+      }
+      
+      console.log('Login request:', { device_id: requestBody.device_id, has_username: !!requestBody.username });
+      
       const res = await fetch(`${API_URL}/api/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          device_id: deviceIdToUse,
-          username: username.trim() || undefined  // Send undefined if empty to trigger auto-generation
-        }),
+        body: JSON.stringify(requestBody),
       });
+      
+      console.log('Login response status:', res.status, res.statusText);
       
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
-        Alert.alert('Login Failed', errorData.error || 'Try again');
+        console.log('Login error response:', errorData);
+        Alert.alert('Login Failed', errorData.error || `HTTP ${res.status}: ${res.statusText}`);
         setLoading(false);
         return;
       }
@@ -592,7 +604,7 @@ export default function HomeScreen() {
             autoCapitalize="none"
             placeholderTextColor="#666"
           />
-          <TouchableOpacity style={styles.button} onPress={login}>
+          <TouchableOpacity style={styles.button} onPress={() => login()}>
             <Text style={styles.buttonText}>CONTINUE</Text>
           </TouchableOpacity>
           <Text style={styles.hintText}>
