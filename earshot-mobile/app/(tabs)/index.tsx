@@ -65,6 +65,7 @@ export default function HomeScreen() {
   const rotateZ = useSharedValue(0);
   const scale = useSharedValue(1);
   const opacity = useSharedValue(1);
+  const currentFeedType = useSharedValue<'global' | 'following'>('global');
   const flipRotation = useSharedValue(0);
   const pulseOpacity = useSharedValue(0.4);
 
@@ -179,6 +180,15 @@ export default function HomeScreen() {
       reloadUsername();
     }, [])
   );
+
+  // Debug: Log feedType changes and sync shared value
+  useEffect(() => {
+    console.log('feedType changed to:', feedType);
+    currentFeedType.value = feedType; // Update shared value when state changes
+  }, [feedType]);
+
+  // Debug: Log render state
+  console.log('RENDER - feedType:', feedType, 'should show back button:', feedType === 'following');
 
   const handleIncomingShare = async (sharedData: string) => {
     try {
@@ -517,17 +527,93 @@ export default function HomeScreen() {
   };
 
   /* ────── GESTURES ────── */
-  const panGesture = Gesture.Pan()
+  // Functions to switch feeds (need to be defined before gesture)
+  const switchToFollowing = () => {
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      setFeedType('following');
+      setCurrentPostIndex(0);
+      if (token) {
+        loadFeed(token, 'following');
+      }
+    } catch (error) {
+      console.error('Error switching to following:', error);
+    }
+  };
+
+  const switchToGlobal = () => {
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      setFeedType('global');
+      setCurrentPostIndex(0);
+      if (token) {
+        loadFeed(token, 'global');
+      }
+    } catch (error) {
+      console.error('Error switching to global:', error);
+    }
+  };
+
+  // Horizontal swipe gesture for switching feeds
+  const horizontalPanGesture = Gesture.Pan()
+    .activeOffsetX([-10, 10]) // Only activate if horizontal movement is significant
+    .failOffsetY([-15, 15]) // Fail if vertical movement is too large (prioritize vertical swipe)
     .onUpdate(e => {
-      translateY.value = e.translationY;
-      // More dramatic rotation for swooshing effect
-      rotateZ.value = e.translationX * 0.2;
-      // More pronounced scale effect
-      scale.value = 1 - Math.abs(e.translationY) / 600;
-      // More dramatic opacity fade
-      opacity.value = 1 - Math.abs(e.translationY) / 500;
+      'worklet';
+      // Check if this is clearly a horizontal swipe (horizontal movement > vertical movement)
+      const isHorizontal = Math.abs(e.translationX) > Math.abs(e.translationY) * 1.5;
+      if (!isHorizontal) {
+        // If it's more vertical than horizontal, cancel this gesture
+        return;
+      }
     })
     .onEnd(e => {
+      'worklet';
+      const threshold = 80; // Minimum swipe distance
+      // Only trigger if horizontal movement is clearly dominant
+      const isHorizontal = Math.abs(e.translationX) > Math.abs(e.translationY) * 1.5;
+      if (!isHorizontal) {
+        return;
+      }
+      const feedTypeValue = currentFeedType.value; // Get current feed type from shared value
+      if (e.translationX < -threshold && feedTypeValue === 'global') {
+        // Swipe left on global feed → switch to following
+        runOnJS(switchToFollowing)();
+      } else if (e.translationX > threshold && feedTypeValue === 'following') {
+        // Swipe right on following feed → switch to global
+        runOnJS(switchToGlobal)();
+      }
+    });
+
+  const panGesture = Gesture.Pan()
+    .activeOffsetY([-10, 10]) // Only activate if vertical movement is significant
+    .failOffsetX([-20, 20]) // Fail if horizontal movement is too large (prioritize horizontal swipe for feed switching)
+    .onUpdate(e => {
+      'worklet';
+      // Only apply rotation if this is clearly a vertical swipe
+      const isVertical = Math.abs(e.translationY) > Math.abs(e.translationX) * 1.5;
+      if (isVertical) {
+        translateY.value = e.translationY;
+        // More dramatic rotation for swooshing effect (only when vertical)
+        rotateZ.value = e.translationX * 0.2;
+        // More pronounced scale effect
+        scale.value = 1 - Math.abs(e.translationY) / 600;
+        // More dramatic opacity fade
+        opacity.value = 1 - Math.abs(e.translationY) / 500;
+      }
+    })
+    .onEnd(e => {
+      'worklet';
+      // Only process if this is clearly a vertical swipe
+      const isVertical = Math.abs(e.translationY) > Math.abs(e.translationX) * 1.5;
+      if (!isVertical) {
+        // If it's more horizontal, let the horizontal gesture handle it
+        translateY.value = withSpring(0);
+        rotateZ.value = withSpring(0);
+        scale.value = withSpring(1);
+        opacity.value = withSpring(1);
+        return;
+      }
       // Lower threshold for easier swiping (was 100, now 50)
       const threshold = 50;
       if (e.translationY > threshold && hasNext) {
@@ -672,30 +758,32 @@ export default function HomeScreen() {
     );
   }
 
-  if (!currentPost) {
-    return (
-      <SafeAreaProvider style={{ flex: 1, backgroundColor: '#000' }}>
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>
-            {feed.length === 0 ? 'No posts yet' : 'No post selected'}
-          </Text>
-          {feed.length > 0 && (
-            <Text style={[styles.emptyText, { fontSize: 12, marginTop: 8 }]}>
-              Feed has {feed.length} posts, but index {currentPostIndex} is out of range
-            </Text>
-          )}
-        </View>
-      </SafeAreaProvider>
-    );
-  }
-
   return (
     <SafeAreaProvider style={{ flex: 1, backgroundColor: '#000' }}>
-      <View style={[styles.container, { paddingTop: insets.top, position: 'relative' }]}>
-        {/* Header */}
-        <View style={styles.header}>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <GestureDetector gesture={horizontalPanGesture}>
+          <View style={[styles.container, { paddingTop: insets.top, position: 'relative' }]}>
+            {/* Header */}
+            <View style={styles.header} key={`header-${feedType}`}>
           <View style={styles.headerContent}>
-            <View style={styles.headerLeft} />
+            <View style={styles.headerLeft}>
+              {feedType === 'following' && (
+                <TouchableOpacity
+                  key="back-button"
+                  style={styles.backButton}
+                  onPress={() => {
+                    console.log('Back button pressed, switching to global feed');
+                    setFeedType('global');
+                    setCurrentPostIndex(0);
+                    if (token) {
+                      loadFeed(token, 'global');
+                    }
+                  }}
+                >
+                  <Text style={styles.backButtonText}>← BACK</Text>
+                </TouchableOpacity>
+              )}
+            </View>
             <View style={styles.headerCenter}>
               <Text style={styles.logo}>Earshot</Text>
               <View style={styles.feedTabs}>
@@ -717,6 +805,7 @@ export default function HomeScreen() {
                 <TouchableOpacity
                   style={[styles.feedTab, feedType === 'following' && styles.feedTabActive]}
                   onPress={() => {
+                    console.log('Following tab pressed, switching to following feed');
                     setFeedType('following');
                     setCurrentPostIndex(0);
                     if (token) {
@@ -749,19 +838,31 @@ export default function HomeScreen() {
         </View>
 
         {/* Vinyl Record Stack */}
-        <GestureHandlerRootView style={{ flex: 1 }}>
-          <GestureDetector gesture={panGesture}>
-            <View style={styles.vinylContainer}>
-              <Animated.View style={[styles.vinylWrapper, animatedStyle]}>
-                <TouchableWithoutFeedback onPress={toggleFlip}>
-                  <View style={styles.flipContainer}>
-                    <Animated.View style={[styles.flipFace, frontFlipStyle]}>
-                      {/* Vinyl Record */}
-                      <View style={styles.vinyl}>
-                        {/* Album Art Center */}
-                        <View style={styles.vinylCenter}>
-                          <Image source={{ uri: currentPost.thumbnail }} style={styles.albumArt} resizeMode="cover" />
-                        </View>
+        {!currentPost ? (
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyText}>
+              {feed.length === 0 ? 'No posts yet' : 'No post selected'}
+            </Text>
+            {feed.length > 0 && (
+              <Text style={[styles.emptyText, { fontSize: 12, marginTop: 8 }]}>
+                Feed has {feed.length} posts, but index {currentPostIndex} is out of range
+              </Text>
+            )}
+          </View>
+        ) : (
+          <GestureHandlerRootView style={{ flex: 1 }}>
+            <GestureDetector gesture={panGesture}>
+              <View style={styles.vinylContainer}>
+                <Animated.View style={[styles.vinylWrapper, animatedStyle]}>
+                  <TouchableWithoutFeedback onPress={toggleFlip}>
+                    <View style={styles.flipContainer}>
+                      <Animated.View style={[styles.flipFace, frontFlipStyle]}>
+                        {/* Vinyl Record */}
+                        <View style={styles.vinyl}>
+                          {/* Album Art Center */}
+                          <View style={styles.vinylCenter}>
+                            <Image source={{ uri: currentPost.thumbnail }} style={styles.albumArt} resizeMode="cover" />
+                          </View>
 
                         {/* Vinyl Grooves */}
                         <View style={styles.groove1} />
@@ -825,7 +926,10 @@ export default function HomeScreen() {
             </View>
           </GestureDetector>
         </GestureHandlerRootView>
-      </View>
+        )}
+          </View>
+        </GestureDetector>
+      </GestureHandlerRootView>
     </SafeAreaProvider>
   );
 }
@@ -923,6 +1027,41 @@ const styles = StyleSheet.create({
   },
   headerLeft: {
     width: 40,
+    alignItems: 'flex-start',
+    justifyContent: 'flex-start',
+    paddingTop: 10,
+    minHeight: 36,
+    backgroundColor: 'transparent',
+  },
+  headerLeftPlaceholder: {
+    width: 36,
+    height: 36,
+  },
+  backButton: {
+    width: 80,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#1DB954',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+    zIndex: 1000,
+    elevation: 10,
+    position: 'relative',
+  },
+  backButtonActive: {
+    opacity: 1,
+  },
+  backButtonInactive: {
+    opacity: 0.3,
+  },
+  backButtonText: {
+    fontSize: 14,
+    color: '#fff',
+    fontWeight: 'bold',
+    lineHeight: 14,
+    textAlign: 'center',
   },
   headerCenter: {
     flex: 1,
