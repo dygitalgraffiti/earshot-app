@@ -1,15 +1,15 @@
 // app/(tabs)/index.tsx
-import { extractUrlFromText, parseMusicUrl } from '@/utils/urlParser';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
-import * as Linking from 'expo-linking';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   Dimensions,
   Image,
+  Linking,
   StyleSheet,
   Text,
   TextInput,
@@ -18,13 +18,13 @@ import {
   View
 } from 'react-native';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
-import Animated, {
+import {
   Easing,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
-  withTiming,
+  withTiming
 } from 'react-native-reanimated';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -32,6 +32,28 @@ const { width, height } = Dimensions.get('window');
 const VINYL_SIZE = width * 0.75;
 
 const API_URL = 'https://earshot-app.onrender.com';
+
+// Helper functions for URL extraction and parsing
+const extractUrlFromText = (text: string): string => {
+  // Simple URL extraction - looks for http/https URLs
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  const match = text.match(urlRegex);
+  return match ? match[0] : text.trim();
+};
+
+const parseMusicUrl = (url: string): { isValid: boolean; platform?: string; url?: string } => {
+  // Simple validation - check if it's a YouTube or Spotify URL
+  const youtubeRegex = /(youtube\.com|youtu\.be)/i;
+  const spotifyRegex = /(spotify\.com|open\.spotify\.com)/i;
+  
+  if (youtubeRegex.test(url)) {
+    return { isValid: true, platform: 'youtube', url };
+  }
+  if (spotifyRegex.test(url)) {
+    return { isValid: true, platform: 'spotify', url };
+  }
+  return { isValid: false, url };
+};
 
 interface Post {
   id: number;
@@ -62,6 +84,8 @@ export default function HomeScreen() {
   const [feedType, setFeedType] = useState<'global' | 'following'>('global'); // Feed type: global or following
   const [isSaved, setIsSaved] = useState(false); // Track if current post is saved to crate
   const [saving, setSaving] = useState(false); // Track if save operation is in progress
+  const [postSaveCounts, setPostSaveCounts] = useState<Record<number, number>>({}); // Random save counts per post (1-25)
+  const [activeListeners, setActiveListeners] = useState(5); // Random active listeners (1-10)
 
   // Animation values
   const translateY = useSharedValue(0);
@@ -74,6 +98,10 @@ export default function HomeScreen() {
 
   // Load token on mount and handle share intents
   useEffect(() => {
+    // Ensure flip starts on front
+    setIsFlipped(false);
+    flipRotation.value = 0;
+    
     const initialize = async () => {
       try {
         // Get or create device ID (persists forever on this device)
@@ -239,7 +267,9 @@ export default function HomeScreen() {
       }
 
       // Pre-fill the URL input
-      setUrl(parsed.url);
+      if (parsed.url) {
+        setUrl(parsed.url);
+      }
       
       // Optional: Auto-post if user is logged in
       if (token) {
@@ -270,13 +300,15 @@ export default function HomeScreen() {
   const hasNext = currentPostIndex < feed.length - 1;
   const hasPrevious = currentPostIndex > 0;
   const saveCount = currentPost?.save_count || 0;
+  // Get random save count for this post (1-25)
+  const displaySaveCount = currentPost ? (postSaveCounts[currentPost.id] || 0) : 0;
 
   // Debug: Log when component renders
   useEffect(() => {
     console.log('HomeScreen rendered, feed length:', feed.length, 'currentIndex:', currentPostIndex);
   }, [feed.length, currentPostIndex]);
 
-  // Update listener count randomly every 3-7 seconds
+  // Update listener count randomly every 3-7 seconds (for main feed)
   useEffect(() => {
     const updateListenerCount = () => {
       const newCount = Math.floor(Math.random() * (50 - 25 + 1)) + 25;
@@ -292,6 +324,27 @@ export default function HomeScreen() {
     }, Math.random() * 4000 + 3000); // 3-7 seconds
 
     return () => clearInterval(interval);
+  }, []);
+
+  // Update active listeners for vinyl back (1-10, changing)
+  useEffect(() => {
+    const updateActiveListeners = () => {
+      const newCount = Math.floor(Math.random() * 10) + 1; // 1-10
+      setActiveListeners(newCount);
+    };
+
+    // Initial count
+    updateActiveListeners();
+
+    // Update at random intervals between 2-5 seconds
+    const scheduleUpdate = () => {
+      const delay = Math.random() * 3000 + 2000; // 2000-5000ms
+      setTimeout(() => {
+        updateActiveListeners();
+        scheduleUpdate();
+      }, delay);
+    };
+    scheduleUpdate();
   }, []);
 
   // Pulsing animation for listener count
@@ -312,16 +365,25 @@ export default function HomeScreen() {
   useEffect(() => {
     // reset flip when post changes
     setIsFlipped(false);
+    // Immediately set to 0, don't animate the reset
     flipRotation.value = 0;
-  }, [currentPostIndex]);
+    // Generate random save count for new post if not already generated
+    if (currentPost && !postSaveCounts[currentPost.id]) {
+      const randomCount = Math.floor(Math.random() * 25) + 1;
+      setPostSaveCounts(prev => ({ ...prev, [currentPost.id]: randomCount }));
+    }
+  }, [currentPostIndex, currentPost?.id]);
 
   const toggleFlip = () => {
     const next = !isFlipped;
     setIsFlipped(next);
-    flipRotation.value = withTiming(next ? 180 : 0, {
+    // Ensure we're animating from the current value to the target
+    const targetRotation = next ? 180 : 0;
+    flipRotation.value = withTiming(targetRotation, {
       duration: 500,
       easing: Easing.out(Easing.cubic),
     });
+    console.log('Toggle flip:', next, 'target rotation:', targetRotation);
   };
 
   /* ────── AUTH ────── */
@@ -432,7 +494,7 @@ export default function HomeScreen() {
       
       if (Array.isArray(data)) {
         console.log('Feed loaded:', data.length, 'posts');
-        setFeed(data);
+      setFeed(data);
         setCurrentPostIndex(0);
       } else {
         console.error('Feed is not an array:', data);
@@ -752,13 +814,27 @@ export default function HomeScreen() {
     opacity: opacity.value,
   }));
 
-  const frontFlipStyle = useAnimatedStyle(() => ({
-    transform: [{ rotateY: `${flipRotation.value}deg` }],
-  }));
+  const frontFlipStyle = useAnimatedStyle(() => {
+    'worklet';
+    const rotation = flipRotation.value;
+    return {
+      transform: [
+        { rotateY: `${rotation}deg` }
+      ],
+      opacity: rotation < 90 ? 1 : 0,
+    };
+  });
 
-  const backFlipStyle = useAnimatedStyle(() => ({
-    transform: [{ rotateY: `${flipRotation.value + 180}deg` }],
-  }));
+  const backFlipStyle = useAnimatedStyle(() => {
+    'worklet';
+    const rotation = flipRotation.value;
+    return {
+      transform: [
+        { rotateY: `${rotation + 180}deg` }
+      ],
+      opacity: rotation >= 90 ? 1 : 0,
+    };
+  });
 
   const pulseStyle = useAnimatedStyle(() => ({
     opacity: pulseOpacity.value,
@@ -791,8 +867,8 @@ export default function HomeScreen() {
   }
 
   if (loading) {
-    return (
-      <SafeAreaProvider style={{ flex: 1, backgroundColor: '#000' }}>
+  return (
+    <SafeAreaProvider style={{ flex: 1, backgroundColor: '#000' }}>
         <View style={styles.emptyContainer}>
           <ActivityIndicator size="large" color="#1DB954" />
           <Text style={styles.emptyText}>Loading...</Text>
@@ -824,9 +900,9 @@ export default function HomeScreen() {
                   }}
                 >
                   <Text style={styles.backButtonText}>← BACK</Text>
-                </TouchableOpacity>
+          </TouchableOpacity>
               )}
-            </View>
+        </View>
             <View style={styles.headerCenter}>
               <Text style={styles.logo}>Earshot</Text>
               <View style={styles.feedTabs}>
@@ -858,13 +934,13 @@ export default function HomeScreen() {
                 >
                   <Text style={[styles.feedTabText, feedType === 'following' && styles.feedTabTextActive]}>
                     Following
-                  </Text>
+                        </Text>
                 </TouchableOpacity>
               </View>
             </View>
             <View style={styles.headerRight}>
               {currentUsername ? (
-                <TouchableOpacity
+                        <TouchableOpacity
                   style={styles.profileButton}
                   onPress={() => {
                     console.log('Profile icon pressed, navigating to:', currentUsername);
@@ -891,7 +967,7 @@ export default function HomeScreen() {
                 Feed has {feed.length} posts, but index {currentPostIndex} is out of range
               </Text>
             )}
-          </View>
+                </View>
         ) : (
           <GestureHandlerRootView style={{ flex: 1 }}>
             <GestureDetector gesture={panGesture}>
@@ -899,61 +975,73 @@ export default function HomeScreen() {
                 <Animated.View style={[styles.vinylWrapper, animatedStyle]}>
                   <TouchableWithoutFeedback onPress={toggleFlip}>
                     <View style={styles.flipContainer}>
-                      <Animated.View style={[styles.flipFace, frontFlipStyle]}>
-                        {/* Vinyl Record */}
-                        <View style={styles.vinyl}>
-                          {/* Album Art Center */}
-                          <View style={styles.vinylCenter}>
-                            <Image source={{ uri: currentPost.thumbnail }} style={styles.albumArt} resizeMode="cover" />
+                      {!isFlipped ? (
+                        /* Front face */
+                        <Animated.View style={[styles.flipFace, frontFlipStyle]}>
+                          <View style={styles.vinyl}>
+                            <View style={styles.vinylCenter}>
+                              <Image source={{ uri: currentPost.thumbnail }} style={styles.albumArt} resizeMode="cover" />
+                            </View>
+                            <View style={styles.groove1} />
+                            <View style={styles.groove2} />
+                            <View style={styles.groove3} />
+                            <View style={styles.centerHole} />
                           </View>
-
-                        {/* Vinyl Grooves */}
-                        <View style={styles.groove1} />
-                        <View style={styles.groove2} />
-                        <View style={styles.groove3} />
-
-                        {/* Center Hole */}
-                        <View style={styles.centerHole} />
-                      </View>
-                    </Animated.View>
-
-                    <Animated.View style={[styles.flipFace, styles.flipBack, backFlipStyle]}>
-                      <View style={styles.vinylBack}>
-                        <Text style={styles.backPlaceholder}>Coming Soon</Text>
-                        {currentPost && (
-                          <View style={styles.crateSection}>
-                            <TouchableOpacity
-                              style={[styles.crateButton, isSaved && styles.crateButtonSaved]}
-                              onPress={handleSaveToCrate}
-                              disabled={saving}
-                            >
-                              <Text style={styles.crateButtonText}>
-                                {saving ? '...' : isSaved ? '✓ Saved' : 'Save to Crate'}
-                              </Text>
-                            </TouchableOpacity>
-                            {saveCount > 0 && (
-                              <Text style={styles.saveCount}>{saveCount} saved</Text>
+                        </Animated.View>
+                      ) : (
+                        /* Back face */
+                        <Animated.View style={[styles.flipFace, styles.flipBack, backFlipStyle]}>
+                          <View style={styles.vinylBack}>
+                            <View style={styles.groove1} />
+                            <View style={styles.groove2} />
+                            <View style={styles.groove3} />
+                            <View style={styles.centerHole} />
+                            {currentPost && (
+                              <View style={styles.crateSection}>
+                                {/* Stats text - simple and readable */}
+                                <View style={styles.curvedTextWrapper}>
+                                  <View style={styles.curvedTextRow}>
+                                    <Text style={styles.curvedText} numberOfLines={1}>
+                                      {displaySaveCount} Saved to Crate
+                                    </Text>
+                                  </View>
+                                  <View style={styles.curvedTextRow}>
+                                    <Text style={styles.curvedText} numberOfLines={1}>
+                                      {activeListeners} Active Listeners
+                                    </Text>
+                                  </View>
+                                </View>
+                                {/* Save button */}
+                                <TouchableOpacity
+                                  style={[styles.crateButton, isSaved && styles.crateButtonSaved]}
+                                  onPress={handleSaveToCrate}
+                                  disabled={saving}
+                                >
+                                  <Text style={styles.crateButtonText} numberOfLines={1}>
+                                    {saving ? '...' : isSaved ? '✓ Saved' : 'Save to Crate'}
+                                  </Text>
+                                </TouchableOpacity>
+                              </View>
                             )}
-                          </View>
-                        )}
-                      </View>
-                    </Animated.View>
-                  </View>
+            </View>
+                        </Animated.View>
+                      )}
+                    </View>
                 </TouchableWithoutFeedback>
 
                 {/* Info Overlay - Always visible, outside flip container */}
                 <View style={styles.infoOverlay}>
                   <Text style={styles.title} numberOfLines={2}>
                     {currentPost.title}
-                  </Text>
+              </Text>
                   {showArtist && (
                     <Text style={styles.artist} numberOfLines={1}>
                       {currentPost.artist}
-                    </Text>
+              </Text>
                   )}
                   <TouchableOpacity onPress={() => openProfile(currentPost.username)}>
                     <Text style={styles.username}>@{currentPost.username}</Text>
-                  </TouchableOpacity>
+            </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.playButton}
                     onPress={() => playSong(currentPost)}
@@ -964,9 +1052,9 @@ export default function HomeScreen() {
                     ) : (
                       <Text style={styles.playText}>▶ Play</Text>
                     )}
-                  </TouchableOpacity>
+            </TouchableOpacity>
                 </View>
-              </Animated.View>
+          </Animated.View>
 
               {/* Listener Count - pulsing text with live dot */}
               <Animated.View style={[styles.listenerContainer, { bottom: 90 }, pulseStyle]}>
@@ -981,8 +1069,8 @@ export default function HomeScreen() {
                 <View style={[styles.swipeHintContainer, { bottom: 50 }]}>
                   <Text style={styles.swipeHint}>↓ Swipe for next</Text>
                 </View>
-              )}
-            </View>
+        )}
+      </View>
           </GestureDetector>
         </GestureHandlerRootView>
         )}
@@ -1168,18 +1256,20 @@ const styles = StyleSheet.create({
     width: VINYL_SIZE,
     height: VINYL_SIZE,
     position: 'relative',
+    overflow: 'visible', // Changed to visible so 3D transforms work properly
   },
   flipFace: {
     width: '100%',
     height: '100%',
-    backfaceVisibility: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  flipBack: {
     position: 'absolute',
     top: 0,
     left: 0,
+    backfaceVisibility: 'hidden',
+  },
+  flipBack: {
+    // Back face - positioned absolutely, opacity controls visibility
   },
   vinyl: {
     width: VINYL_SIZE,
@@ -1247,6 +1337,7 @@ const styles = StyleSheet.create({
     borderColor: '#333',
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'visible', // Allow text to be visible
   },
   backPlaceholder: {
     color: '#555',
@@ -1256,18 +1347,52 @@ const styles = StyleSheet.create({
     marginTop: 40,
   },
   crateSection: {
-    marginTop: 60,
+    position: 'absolute',
+    top: VINYL_SIZE * 0.35, // Position lower to avoid center hole
     alignItems: 'center',
     justifyContent: 'center',
+    width: '100%',
+    paddingHorizontal: 20,
+  },
+  curvedTextWrapper: {
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  curvedTextRow: {
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  curvedTextRowTop: {
+    // Simple positioning, no complex transforms that cause clipping
+  },
+  curvedTextRowBottom: {
+    // Simple positioning, no complex transforms that cause clipping
+  },
+  curvedText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
+    textAlign: 'center',
+    letterSpacing: 0.5,
+    textShadowColor: 'rgba(0, 0, 0, 0.9)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+    paddingHorizontal: 15,
   },
   crateButton: {
     backgroundColor: '#1DB954',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
     borderRadius: 20,
     borderWidth: 2,
     borderColor: '#fff',
     minWidth: 140,
+    maxWidth: '90%', // Prevent button from going off screen
+    alignSelf: 'center',
   },
   crateButtonSaved: {
     backgroundColor: '#333',
