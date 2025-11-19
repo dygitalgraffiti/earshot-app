@@ -3,16 +3,16 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  FlatList,
-  Image,
-  Linking,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    FlatList,
+    Image,
+    Linking,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -49,6 +49,7 @@ export default function ProfileScreen() {
   const [loading, setLoading] = useState(true);
   const [token, setToken] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [removingFromCrateId, setRemovingFromCrateId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<'shared' | 'crate'>('shared');
   const [isEditingUsername, setIsEditingUsername] = useState(false);
   const [editedUsername, setEditedUsername] = useState('');
@@ -132,6 +133,55 @@ export default function ProfileScreen() {
               Alert.alert('Error', 'Failed to delete post');
             } finally {
               setDeletingId(null);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const removeFromCrate = async (postId: number) => {
+    if (!token) {
+      Alert.alert('Error', 'You must be logged in to remove from crate');
+      return;
+    }
+
+    Alert.alert(
+      'Remove from Crate',
+      'Remove this post from your crate?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setRemovingFromCrateId(postId);
+              const res = await fetch(`${API_URL}/api/crate/${postId}`, {
+                method: 'DELETE',
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json',
+                },
+              });
+
+              if (!res.ok) {
+                const error = await res.json();
+                Alert.alert('Error', error.error || 'Failed to remove from crate');
+                return;
+              }
+
+              // Remove post from local state
+              if (profile) {
+                setProfile({
+                  ...profile,
+                  crate: (profile.crate || []).filter(p => p.id !== postId),
+                });
+              }
+            } catch (e) {
+              Alert.alert('Error', 'Failed to remove from crate');
+            } finally {
+              setRemovingFromCrateId(null);
             }
           },
         },
@@ -432,10 +482,10 @@ export default function ProfileScreen() {
             {profile.is_own_profile && (
               <TouchableOpacity
                 style={styles.menuButton}
-                onPress={() => deletePost(item.id)}
-                disabled={deletingId === item.id}
+                onPress={() => activeTab === 'shared' ? deletePost(item.id) : removeFromCrate(item.id)}
+                disabled={activeTab === 'shared' ? deletingId === item.id : removingFromCrateId === item.id}
               >
-                {deletingId === item.id ? (
+                {(activeTab === 'shared' ? deletingId === item.id : removingFromCrateId === item.id) ? (
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
                   <Text style={styles.menuDots}>⋯</Text>
