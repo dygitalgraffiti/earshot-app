@@ -413,7 +413,12 @@ def api_feed():
     
     feed = []
     for p in posts:
-        save_count = db.session.query(crate).filter_by(post_id=p.id).count()
+        try:
+            # Try to get save count, default to 0 if crate table doesn't exist yet
+            save_count = db.session.query(crate).filter_by(post_id=p.id).count()
+        except Exception as e:
+            print(f"Error querying crate table: {e}")
+            save_count = 0  # Default to 0 if table doesn't exist
         feed.append({
             'id': p.id,
             'username': p.author.username if p.author else '[deleted]',
@@ -455,7 +460,11 @@ def api_post():
 def api_profile(username):
     user = User.query.filter(func.lower(User.username) == username.lower()).first_or_404()
     posts = Post.query.filter_by(user_id=user.id).order_by(Post.timestamp.desc()).all()
-    crate_posts = user.saved_posts.order_by(crate.c.saved_at.desc()).all()
+    try:
+        crate_posts = user.saved_posts.order_by(crate.c.saved_at.desc()).all()
+    except Exception as e:
+        print(f"Error loading crate posts (table may not exist): {e}")
+        crate_posts = []  # Default to empty if table doesn't exist
     
     # Check if this is the current user's own profile (optional JWT)
     is_own_profile = False
@@ -474,6 +483,11 @@ def api_profile(username):
         pass  # Not logged in or invalid token
 
     def format_post(p):
+        try:
+            save_count = db.session.query(crate).filter_by(post_id=p.id).count()
+        except Exception as e:
+            print(f"Error querying crate table: {e}")
+            save_count = 0  # Default to 0 if table doesn't exist
         return {
             'id': p.id,
             'title': p.title,
@@ -482,7 +496,7 @@ def api_profile(username):
             'url': p.url,
             'createdAt': p.timestamp.isoformat(),
             'is_first_discover': Post.query.filter_by(url=p.url).count() == 1,
-            'save_count': db.session.query(crate).filter_by(post_id=p.id).count()
+            'save_count': save_count
         }
 
     return jsonify({
@@ -558,26 +572,40 @@ def api_crate(post_id):
     current_user = User.query.get_or_404(current_user_id)
     post = Post.query.get_or_404(post_id)
     
-    if request.method == 'POST':
-        # Save to crate
-        if post not in current_user.saved_posts.all():
-            current_user.saved_posts.append(post)
-            db.session.commit()
-            save_count = db.session.query(crate).filter_by(post_id=post_id).count()
+    try:
+        if request.method == 'POST':
+            # Save to crate
+            try:
+                if post not in current_user.saved_posts.all():
+                    current_user.saved_posts.append(post)
+                    db.session.commit()
+            except Exception as e:
+                print(f"Error saving to crate (table may not exist): {e}")
+                return jsonify({'error': 'Crate feature not available yet. Database migration needed.'}), 503
+            try:
+                save_count = db.session.query(crate).filter_by(post_id=post_id).count()
+            except Exception:
+                save_count = 0
             return jsonify({'success': True, 'saved': True, 'save_count': save_count})
         else:
-            save_count = db.session.query(crate).filter_by(post_id=post_id).count()
-            return jsonify({'success': True, 'saved': True, 'save_count': save_count, 'message': 'Already in crate'})
-    else:
-        # DELETE - Remove from crate
-        if post in current_user.saved_posts.all():
-            current_user.saved_posts.remove(post)
-            db.session.commit()
-            save_count = db.session.query(crate).filter_by(post_id=post_id).count()
+            # DELETE - Remove from crate
+            try:
+                if post in current_user.saved_posts.all():
+                    current_user.saved_posts.remove(post)
+                    db.session.commit()
+            except Exception as e:
+                print(f"Error removing from crate (table may not exist): {e}")
+                return jsonify({'error': 'Crate feature not available yet. Database migration needed.'}), 503
+            try:
+                save_count = db.session.query(crate).filter_by(post_id=post_id).count()
+            except Exception:
+                save_count = 0
             return jsonify({'success': True, 'saved': False, 'save_count': save_count})
-        else:
-            save_count = db.session.query(crate).filter_by(post_id=post_id).count()
-            return jsonify({'success': True, 'saved': False, 'save_count': save_count, 'message': 'Not in crate'})
+    except Exception as e:
+        print(f"Error in crate endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 # ---------- UPDATE USERNAME ----------
 @app.route('/api/profile/username', methods=['PUT'])
@@ -753,6 +781,58 @@ def migrate_artists_endpoint():
         
     except Exception as e:
         return jsonify({'error': f'Migration failed: {str(e)}'}), 500
+
+@app.route('/api/migrate-crate', methods=['POST'])
+def migrate_crate():
+    """Create the crate table for saving posts."""
+    results = []
+    try:
+        # Check if crate table exists
+        result = db.session.execute(text("""
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_name='crate'
+        """))
+        table_exists = result.fetchone() is not None
+        
+        if not table_exists:
+            try:
+                # Create the crate table
+                db.session.execute(text("""
+                    CREATE TABLE crate (
+                        user_id INTEGER NOT NULL,
+                        post_id INTEGER NOT NULL,
+                        saved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        PRIMARY KEY (user_id, post_id),
+                        FOREIGN KEY (user_id) REFERENCES "user" (id),
+                        FOREIGN KEY (post_id) REFERENCES post (id)
+                    )
+                """))
+                db.session.commit()
+                results.append('crate table created successfully')
+            except Exception as e:
+                error_str = str(e).lower()
+                if 'already exists' in error_str or 'duplicate' in error_str:
+                    results.append('crate table already exists')
+                else:
+                    results.append(f'crate table creation error: {str(e)}')
+                    db.session.rollback()
+        else:
+            results.append('crate table already exists')
+        
+        return jsonify({
+            'success': True,
+            'message': 'Crate migration completed',
+            'results': results
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'results': results
+        }), 500
 
 # ---------- RUN ----------
 if __name__ == '__main__':

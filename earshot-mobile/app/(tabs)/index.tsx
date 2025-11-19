@@ -190,9 +190,6 @@ export default function HomeScreen() {
     currentFeedType.value = feedType; // Update shared value when state changes
   }, [feedType]);
 
-  // Debug: Log render state
-  console.log('RENDER - feedType:', feedType, 'should show back button:', feedType === 'following');
-
   const handleIncomingShare = async (sharedData: string) => {
     try {
       // Skip if no data or empty string
@@ -420,6 +417,7 @@ export default function HomeScreen() {
           await AsyncStorage.removeItem('authToken');
           setToken(null);
           setFeed([]);
+          setLoading(false); // Make sure to set loading to false
           // Don't show alert here - let user continue using app
           // They'll see login screen on next interaction
           return;
@@ -445,8 +443,9 @@ export default function HomeScreen() {
       console.error('Feed error:', e);
       Alert.alert('Feed Error', `Could not load posts: ${e instanceof Error ? e.message : 'Unknown error'}`);
       setFeed([]);
+      setLoading(false); // Ensure loading is set to false on error
     } finally {
-      setLoading(false);
+      setLoading(false); // Double ensure loading is always set to false
     }
   };
 
