@@ -50,6 +50,14 @@ follow = db.Table(
     db.Column('followed_id', db.Integer, db.ForeignKey('user.id'), primary_key=True)
 )
 
+# Define crate table (many-to-many between users and posts)
+crate = db.Table(
+    'crate',
+    db.Column('user_id', db.Integer, db.ForeignKey('user.id'), primary_key=True),
+    db.Column('post_id', db.Integer, db.ForeignKey('post.id'), primary_key=True),
+    db.Column('saved_at', db.DateTime, default=datetime.utcnow)
+)
+
 class User(db.Model):
     __tablename__ = 'user'
     id = db.Column(db.Integer, primary_key=True)
@@ -66,6 +74,13 @@ class User(db.Model):
         primaryjoin=('follow.c.follower_id == user.c.id'),
         secondaryjoin=('follow.c.followed_id == user.c.id'),
         backref=db.backref('followers', lazy='dynamic'),
+        lazy='dynamic'
+    )
+    
+    # Crate relationship (saved posts)
+    saved_posts = db.relationship(
+        'Post', secondary=crate,
+        backref=db.backref('saved_by', lazy='dynamic'),
         lazy='dynamic'
     )
 
@@ -398,6 +413,7 @@ def api_feed():
     
     feed = []
     for p in posts:
+        save_count = db.session.query(crate).filter_by(post_id=p.id).count()
         feed.append({
             'id': p.id,
             'username': p.author.username if p.author else '[deleted]',
@@ -406,6 +422,7 @@ def api_feed():
             'thumbnail': p.thumbnail,
             'url': p.url,
             'createdAt': p.timestamp.isoformat(),
+            'save_count': save_count,
         })
     return jsonify(feed)
 
@@ -438,6 +455,7 @@ def api_post():
 def api_profile(username):
     user = User.query.filter(func.lower(User.username) == username.lower()).first_or_404()
     posts = Post.query.filter_by(user_id=user.id).order_by(Post.timestamp.desc()).all()
+    crate_posts = user.saved_posts.order_by(crate.c.saved_at.desc()).all()
     
     # Check if this is the current user's own profile (optional JWT)
     is_own_profile = False
@@ -455,6 +473,18 @@ def api_profile(username):
     except:
         pass  # Not logged in or invalid token
 
+    def format_post(p):
+        return {
+            'id': p.id,
+            'title': p.title,
+            'artist': p.artist,
+            'thumbnail': p.thumbnail,
+            'url': p.url,
+            'createdAt': p.timestamp.isoformat(),
+            'is_first_discover': Post.query.filter_by(url=p.url).count() == 1,
+            'save_count': db.session.query(crate).filter_by(post_id=p.id).count()
+        }
+
     return jsonify({
         'user': {
             'id': user.id,
@@ -465,15 +495,8 @@ def api_profile(username):
         },
         'is_own_profile': is_own_profile,
         'is_following': is_following,
-        'posts': [{
-            'id': p.id,
-            'title': p.title,
-            'artist': p.artist,
-            'thumbnail': p.thumbnail,
-            'url': p.url,
-            'createdAt': p.timestamp.isoformat(),
-            'is_first_discover': Post.query.filter_by(url=p.url).count() == 1
-        } for p in posts]
+        'posts': [format_post(p) for p in posts],
+        'crate': [format_post(p) for p in crate_posts]
     })
 
 @app.route('/api/follow/<int:user_id>', methods=['POST'])
@@ -525,6 +548,36 @@ def api_me():
         'username': current_user.username,
         'twitter': current_user.twitter,
     })
+
+# ---------- CRATE (SAVE POSTS) ----------
+@app.route('/api/crate/<int:post_id>', methods=['POST', 'DELETE'])
+@jwt_required()
+def api_crate(post_id):
+    """Save or unsave a post to/from crate."""
+    current_user_id = int(get_jwt_identity())
+    current_user = User.query.get_or_404(current_user_id)
+    post = Post.query.get_or_404(post_id)
+    
+    if request.method == 'POST':
+        # Save to crate
+        if post not in current_user.saved_posts.all():
+            current_user.saved_posts.append(post)
+            db.session.commit()
+            save_count = db.session.query(crate).filter_by(post_id=post_id).count()
+            return jsonify({'success': True, 'saved': True, 'save_count': save_count})
+        else:
+            save_count = db.session.query(crate).filter_by(post_id=post_id).count()
+            return jsonify({'success': True, 'saved': True, 'save_count': save_count, 'message': 'Already in crate'})
+    else:
+        # DELETE - Remove from crate
+        if post in current_user.saved_posts.all():
+            current_user.saved_posts.remove(post)
+            db.session.commit()
+            save_count = db.session.query(crate).filter_by(post_id=post_id).count()
+            return jsonify({'success': True, 'saved': False, 'save_count': save_count})
+        else:
+            save_count = db.session.query(crate).filter_by(post_id=post_id).count()
+            return jsonify({'success': True, 'saved': False, 'save_count': save_count, 'message': 'Not in crate'})
 
 # ---------- UPDATE USERNAME ----------
 @app.route('/api/profile/username', methods=['PUT'])

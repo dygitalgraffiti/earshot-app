@@ -41,6 +41,7 @@ interface Post {
   username: string;
   url: string;
   createdAt: string;
+  save_count?: number;
 }
 
 export default function HomeScreen() {
@@ -59,6 +60,8 @@ export default function HomeScreen() {
   const [isFlipped, setIsFlipped] = useState(false);
   const [listenerCount, setListenerCount] = useState(35);
   const [feedType, setFeedType] = useState<'global' | 'following'>('global'); // Feed type: global or following
+  const [isSaved, setIsSaved] = useState(false); // Track if current post is saved to crate
+  const [saving, setSaving] = useState(false); // Track if save operation is in progress
 
   // Animation values
   const translateY = useSharedValue(0);
@@ -269,6 +272,7 @@ export default function HomeScreen() {
   const showArtist = currentPost?.artist && currentPost.artist.toLowerCase() !== 'unknown artist';
   const hasNext = currentPostIndex < feed.length - 1;
   const hasPrevious = currentPostIndex > 0;
+  const saveCount = currentPost?.save_count || 0;
 
   // Debug: Log when component renders
   useEffect(() => {
@@ -502,6 +506,46 @@ export default function HomeScreen() {
       Alert.alert('Post Failed', e instanceof Error ? e.message : 'Network error. Try again.');
     }
   };
+
+  /* ────── CRATE FUNCTIONS ────── */
+  const handleSaveToCrate = async () => {
+    if (!currentPost || !token || saving) return;
+    
+    setSaving(true);
+    try {
+      const method = isSaved ? 'DELETE' : 'POST';
+      const response = await fetch(`${API_URL}/api/crate/${currentPost.id}`, {
+        method,
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setIsSaved(!isSaved);
+        // Update save count in feed
+        const updatedFeed = feed.map(p => 
+          p.id === currentPost.id ? { ...p, save_count: data.save_count } : p
+        );
+        setFeed(updatedFeed);
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      } else {
+        Alert.alert('Error', 'Failed to save to crate');
+      }
+    } catch (error) {
+      console.error('Crate error:', error);
+      Alert.alert('Error', 'Failed to save to crate');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Reset saved state when post changes
+  useEffect(() => {
+    setIsSaved(false); // Will be updated when we check user's crate
+  }, [currentPost?.id]);
 
   /* ────── NAVIGATION ────── */
   const goToNext = () => {
@@ -877,6 +921,22 @@ export default function HomeScreen() {
                     <Animated.View style={[styles.flipFace, styles.flipBack, backFlipStyle]}>
                       <View style={styles.vinylBack}>
                         <Text style={styles.backPlaceholder}>Coming Soon</Text>
+                        {currentPost && (
+                          <View style={styles.crateSection}>
+                            <TouchableOpacity
+                              style={[styles.crateButton, isSaved && styles.crateButtonSaved]}
+                              onPress={handleSaveToCrate}
+                              disabled={saving}
+                            >
+                              <Text style={styles.crateButtonText}>
+                                {saving ? '...' : isSaved ? '✓ Saved' : 'Save to Crate'}
+                              </Text>
+                            </TouchableOpacity>
+                            {saveCount > 0 && (
+                              <Text style={styles.saveCount}>{saveCount} saved</Text>
+                            )}
+                          </View>
+                        )}
                       </View>
                     </Animated.View>
                   </View>
@@ -1194,6 +1254,36 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     fontSize: 16,
     textTransform: 'uppercase',
+    marginTop: 40,
+  },
+  crateSection: {
+    marginTop: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  crateButton: {
+    backgroundColor: '#1DB954',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: '#fff',
+    minWidth: 140,
+  },
+  crateButtonSaved: {
+    backgroundColor: '#333',
+  },
+  crateButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  saveCount: {
+    color: '#888',
+    fontSize: 12,
+    marginTop: 8,
+    textAlign: 'center',
   },
   infoOverlay: {
     position: 'absolute',

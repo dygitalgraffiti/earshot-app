@@ -39,6 +39,7 @@ interface ProfileData {
   is_own_profile: boolean;
   is_following: boolean;
   posts: ProfilePost[];
+  crate: ProfilePost[];
 }
 
 export default function ProfileScreen() {
@@ -48,6 +49,7 @@ export default function ProfileScreen() {
   const [loading, setLoading] = useState(true);
   const [token, setToken] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [activeTab, setActiveTab] = useState<'shared' | 'crate'>('shared');
   const [isEditingUsername, setIsEditingUsername] = useState(false);
   const [editedUsername, setEditedUsername] = useState('');
   const [updatingUsername, setUpdatingUsername] = useState(false);
@@ -378,9 +380,29 @@ export default function ProfileScreen() {
           </View>
         </View>
       </View>
+      
+      {/* Tabs for Shared and Crate */}
+      <View style={styles.tabs}>
+        <TouchableOpacity
+          style={[styles.tab, activeTab === 'shared' && styles.tabActive]}
+          onPress={() => setActiveTab('shared')}
+        >
+          <Text style={[styles.tabText, activeTab === 'shared' && styles.tabTextActive]}>
+            Shared ({profile.posts.length})
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tab, activeTab === 'crate' && styles.tabActive]}
+          onPress={() => setActiveTab('crate')}
+        >
+          <Text style={[styles.tabText, activeTab === 'crate' && styles.tabTextActive]}>
+            Crate ({profile.crate?.length || 0})
+          </Text>
+        </TouchableOpacity>
+      </View>
 
       <FlatList
-        data={profile.posts}
+        data={activeTab === 'shared' ? profile.posts : (profile.crate || [])}
         keyExtractor={(item) => item.id.toString()}
         renderItem={({ item }) => (
           <TouchableOpacity
@@ -433,6 +455,31 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
+  tabs: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+    paddingHorizontal: 20,
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  tabActive: {
+    borderBottomColor: '#1DB954',
+  },
+  tabText: {
+    color: '#666',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  tabTextActive: {
+    color: '#1DB954',
+    fontWeight: 'bold',
+  },
   container: {
     flex: 1,
     backgroundColor: '#000',
