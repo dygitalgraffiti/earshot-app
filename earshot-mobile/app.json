@@ -14,11 +14,13 @@
       "infoPlist": {
         "NSUserActivityTypes": ["INSendMessageIntent"],
         "ITSAppUsesNonExemptEncryption": false,
+        "LSSupportsOpeningDocumentsInPlace": true,
         "CFBundleDocumentTypes": [
           {
             "CFBundleTypeName": "URL",
             "CFBundleTypeRole": "Editor",
-            "LSItemContentTypes": ["public.url", "public.text"]
+            "LSItemContentTypes": ["public.url", "public.text"],
+            "LSHandlerRank": "Alternate"
           }
         ]
       },
