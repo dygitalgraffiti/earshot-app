@@ -125,12 +125,8 @@ export default function HomeScreen() {
           }
           await loadFeed(savedToken);
         } else {
-          // Auto-login with device ID if no token
-          if (deviceIdValue) {
-            await login(deviceIdValue);
-          } else {
-            setLoading(false);
-          }
+          // No saved token - show login screen and wait for user action
+          setLoading(false);
         }
       } catch (e) {
         console.warn('Failed to initialize:', e);
