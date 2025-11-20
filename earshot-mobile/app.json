@@ -13,8 +13,23 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSUserActivityTypes": ["INSendMessageIntent"],
-        "ITSAppUsesNonExemptEncryption": false
-      }
+        "ITSAppUsesNonExemptEncryption": false,
+        "CFBundleDocumentTypes": [
+          {
+            "CFBundleTypeName": "URL",
+            "CFBundleTypeRole": "Editor",
+            "LSItemContentTypes": ["public.url", "public.text"]
+          }
+        ]
+      },
+      "associatedDomains": [
+        "applinks:open.spotify.com",
+        "applinks:spotify.com",
+        "applinks:music.apple.com",
+        "applinks:youtube.com",
+        "applinks:youtu.be",
+        "applinks:music.youtube.com"
+      ]
     },
     "android": {
       "adaptiveIcon": {
