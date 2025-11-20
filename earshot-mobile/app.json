@@ -9,17 +9,12 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
+      "bundleIdentifier": "com.anonymous.earshotmobile",
       "supportsTablet": true,
       "infoPlist": {
-        "NSUserActivityTypes": [
-          "INSendMessageIntent",
-          "INSendMessageIntent",
-          "INSendMessageIntent",
-          "INSendMessageIntent"
-        ],
+        "NSUserActivityTypes": ["INSendMessageIntent"],
         "ITSAppUsesNonExemptEncryption": false
-      },
-      "bundleIdentifier": "com.anonymous.earshotmobile"
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -30,31 +25,18 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
+      "package": "com.anonymous.earshotmobile",
       "intentFilters": [
         {
           "action": "android.intent.action.SEND",
-          "category": [
-            "android.intent.category.DEFAULT"
-          ],
-          "data": [
-            {
-              "mimeType": "text/plain"
-            }
-          ]
-        },
-        {
-          "action": "android.intent.action.SEND",
-          "category": [
-            "android.intent.category.DEFAULT"
-          ],
+          "category": ["android.intent.category.DEFAULT"],
           "data": [
             {
               "mimeType": "text/plain"
             }
           ]
         }
-      ],
-      "package": "com.anonymous.earshotmobile"
+      ]
     },
     "web": {
       "output": "static",
