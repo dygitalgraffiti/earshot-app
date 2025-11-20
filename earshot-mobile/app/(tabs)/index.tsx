@@ -6,7 +6,6 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Animated,
   Dimensions,
   Image,
   Linking,
@@ -14,12 +13,10 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  TouchableWithoutFeedback,
   View
 } from 'react-native';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
-import {
-  Easing,
+import Animated, {
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
@@ -377,11 +374,12 @@ export default function HomeScreen() {
   const toggleFlip = () => {
     const next = !isFlipped;
     setIsFlipped(next);
-    // Ensure we're animating from the current value to the target
+    // Animate rotation smoothly with spring for more dramatic effect
     const targetRotation = next ? 180 : 0;
-    flipRotation.value = withTiming(targetRotation, {
-      duration: 500,
-      easing: Easing.out(Easing.cubic),
+    flipRotation.value = withSpring(targetRotation, {
+      damping: 15,
+      stiffness: 100,
+      mass: 1,
     });
     console.log('Toggle flip:', next, 'target rotation:', targetRotation);
   };
@@ -690,6 +688,15 @@ export default function HomeScreen() {
       }
     });
 
+  // Tap gesture for flipping the vinyl - use long press to avoid conflicts with pan
+  const tapGesture = Gesture.Tap()
+    .maxDuration(300)
+    .maxDistance(10)
+    .onEnd(() => {
+      'worklet';
+      runOnJS(toggleFlip)();
+    });
+
   const panGesture = Gesture.Pan()
     .activeOffsetY([-10, 10]) // Only activate if vertical movement is significant
     .failOffsetX([-20, 20]) // Fail if horizontal movement is too large (prioritize horizontal swipe for feed switching)
@@ -815,24 +822,28 @@ export default function HomeScreen() {
   }));
 
   const frontFlipStyle = useAnimatedStyle(() => {
-    'worklet';
     const rotation = flipRotation.value;
+    // Front visible when rotation < 90, hidden when >= 90
+    const frontOpacity = rotation < 90 ? 1 : 0;
     return {
       transform: [
+        { perspective: 1000 },
         { rotateY: `${rotation}deg` }
       ],
-      opacity: rotation < 90 ? 1 : 0,
+      opacity: frontOpacity,
     };
   });
 
   const backFlipStyle = useAnimatedStyle(() => {
-    'worklet';
     const rotation = flipRotation.value;
+    // Back visible when rotation >= 90, hidden when < 90
+    const backOpacity = rotation >= 90 ? 1 : 0;
     return {
       transform: [
+        { perspective: 1000 },
         { rotateY: `${rotation + 180}deg` }
       ],
-      opacity: rotation >= 90 ? 1 : 0,
+      opacity: backOpacity,
     };
   });
 
@@ -969,79 +980,76 @@ export default function HomeScreen() {
             )}
                 </View>
         ) : (
-          <GestureHandlerRootView style={{ flex: 1 }}>
-            <GestureDetector gesture={panGesture}>
-              <View style={styles.vinylContainer}>
-                <Animated.View style={[styles.vinylWrapper, animatedStyle]}>
-                  <TouchableWithoutFeedback onPress={toggleFlip}>
-                    <View style={styles.flipContainer}>
-                      {!isFlipped ? (
-                        /* Front face */
-                        <Animated.View style={[styles.flipFace, frontFlipStyle]}>
-                          <View style={styles.vinyl}>
-                            <View style={styles.vinylCenter}>
-                              <Image source={{ uri: currentPost.thumbnail }} style={styles.albumArt} resizeMode="cover" />
-                            </View>
-                            <View style={styles.groove1} />
-                            <View style={styles.groove2} />
-                            <View style={styles.groove3} />
-                            <View style={styles.centerHole} />
-                          </View>
-                        </Animated.View>
-                      ) : (
-                        /* Back face */
-                        <Animated.View style={[styles.flipFace, styles.flipBack, backFlipStyle]}>
-                          <View style={styles.vinylBack}>
-                            <View style={styles.groove1} />
-                            <View style={styles.groove2} />
-                            <View style={styles.groove3} />
-                            <View style={styles.centerHole} />
-                            {currentPost && (
-                              <View style={styles.crateSection}>
-                                {/* Stats text - simple and readable */}
-                                <View style={styles.curvedTextWrapper}>
-                                  <View style={styles.curvedTextRow}>
-                                    <Text style={styles.curvedText} numberOfLines={1}>
-                                      {displaySaveCount} Saved to Crate
-                                    </Text>
-                                  </View>
-                                  <View style={styles.curvedTextRow}>
-                                    <Text style={styles.curvedText} numberOfLines={1}>
-                                      {activeListeners} Active Listeners
-                                    </Text>
-                                  </View>
-                                </View>
-                                {/* Save button */}
-                                <TouchableOpacity
-                                  style={[styles.crateButton, isSaved && styles.crateButtonSaved]}
-                                  onPress={handleSaveToCrate}
-                                  disabled={saving}
-                                >
-                                  <Text style={styles.crateButtonText} numberOfLines={1}>
-                                    {saving ? '...' : isSaved ? '✓ Saved' : 'Save to Crate'}
-                                  </Text>
-                                </TouchableOpacity>
+          <GestureDetector gesture={panGesture}>
+            <View style={styles.vinylContainer}>
+              <Animated.View style={[styles.vinylWrapper, animatedStyle]}>
+                <GestureDetector gesture={tapGesture}>
+                  <View style={styles.flipContainer}>
+                    {/* Back face - render first (behind) */}
+                    <Animated.View style={[styles.flipFace, styles.flipBack, backFlipStyle]}>
+                      <View style={styles.vinylBack}>
+                        <View style={styles.groove1} />
+                        <View style={styles.groove2} />
+                        <View style={styles.groove3} />
+                        <View style={styles.centerHole} />
+                        {currentPost && (
+                          <View style={styles.crateSection}>
+                            {/* Stats text - simple and readable */}
+                            <View style={styles.curvedTextWrapper}>
+                              <View style={styles.curvedTextRow}>
+                                <Text style={styles.curvedText} numberOfLines={1}>
+                                  {displaySaveCount} Saved to Crate
+                                </Text>
                               </View>
-                            )}
-            </View>
-                        </Animated.View>
-                      )}
-                    </View>
-                </TouchableWithoutFeedback>
+                              <View style={styles.curvedTextRow}>
+                                <Text style={styles.curvedText} numberOfLines={1}>
+                                  {activeListeners} Active Listeners
+                                </Text>
+                              </View>
+                            </View>
+                            {/* Save button */}
+                            <TouchableOpacity
+                              style={[styles.crateButton, isSaved && styles.crateButtonSaved]}
+                              onPress={handleSaveToCrate}
+                              disabled={saving}
+                            >
+                              <Text style={styles.crateButtonText} numberOfLines={1}>
+                                {saving ? '...' : isSaved ? '✓ Saved' : 'Save to Crate'}
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
+                        )}
+                      </View>
+                    </Animated.View>
+                    
+                    {/* Front face - render last (on top) */}
+                    <Animated.View style={[styles.flipFace, frontFlipStyle]}>
+                      <View style={styles.vinyl}>
+                        <View style={styles.vinylCenter}>
+                          <Image source={{ uri: currentPost.thumbnail }} style={styles.albumArt} resizeMode="cover" />
+                        </View>
+                        <View style={styles.groove1} />
+                        <View style={styles.groove2} />
+                        <View style={styles.groove3} />
+                        <View style={styles.centerHole} />
+                      </View>
+                    </Animated.View>
+                  </View>
+                </GestureDetector>
 
                 {/* Info Overlay - Always visible, outside flip container */}
                 <View style={styles.infoOverlay}>
                   <Text style={styles.title} numberOfLines={2}>
                     {currentPost.title}
-              </Text>
+                  </Text>
                   {showArtist && (
                     <Text style={styles.artist} numberOfLines={1}>
                       {currentPost.artist}
-              </Text>
+                    </Text>
                   )}
                   <TouchableOpacity onPress={() => openProfile(currentPost.username)}>
                     <Text style={styles.username}>@{currentPost.username}</Text>
-            </TouchableOpacity>
+                  </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.playButton}
                     onPress={() => playSong(currentPost)}
@@ -1052,9 +1060,9 @@ export default function HomeScreen() {
                     ) : (
                       <Text style={styles.playText}>▶ Play</Text>
                     )}
-            </TouchableOpacity>
+                  </TouchableOpacity>
                 </View>
-          </Animated.View>
+              </Animated.View>
 
               {/* Listener Count - pulsing text with live dot */}
               <Animated.View style={[styles.listenerContainer, { bottom: 90 }, pulseStyle]}>
@@ -1069,10 +1077,9 @@ export default function HomeScreen() {
                 <View style={[styles.swipeHintContainer, { bottom: 50 }]}>
                   <Text style={styles.swipeHint}>↓ Swipe for next</Text>
                 </View>
-        )}
-      </View>
+              )}
+            </View>
           </GestureDetector>
-        </GestureHandlerRootView>
         )}
           </View>
         </GestureDetector>
@@ -1256,7 +1263,6 @@ const styles = StyleSheet.create({
     width: VINYL_SIZE,
     height: VINYL_SIZE,
     position: 'relative',
-    overflow: 'visible', // Changed to visible so 3D transforms work properly
   },
   flipFace: {
     width: '100%',
@@ -1266,7 +1272,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     left: 0,
-    backfaceVisibility: 'hidden',
   },
   flipBack: {
     // Back face - positioned absolutely, opacity controls visibility
