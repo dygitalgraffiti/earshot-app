@@ -73,7 +73,7 @@
           }
         }
       ],
-      "./plugins/withShareExtension"
+      "./plugins/withShareExtension.js"
     ],
     "experiments": {
       "typedRoutes": true,
