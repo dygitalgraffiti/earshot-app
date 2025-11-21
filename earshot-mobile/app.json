@@ -11,6 +11,11 @@
     "ios": {
       "bundleIdentifier": "com.anonymous.earshotmobile",
       "supportsTablet": true,
+      "entitlements": {
+        "com.apple.security.application-groups": [
+          "group.com.anonymous.earshotmobile"
+        ]
+      },
       "infoPlist": {
         "NSUserActivityTypes": ["INSendMessageIntent"],
         "ITSAppUsesNonExemptEncryption": false,

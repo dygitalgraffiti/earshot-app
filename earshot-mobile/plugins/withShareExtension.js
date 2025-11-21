@@ -1,60 +1,31 @@
-const configPlugins = require('@expo/config-plugins');
+const { withDangerousMod } = require('@expo/config-plugins');
 const fs = require('fs');
 const path = require('path');
 
-// Get functions from config plugins
-const withEntitlements = configPlugins.withEntitlements;
-const withXcodeProject = configPlugins.withXcodeProject;
-
-// Verify they exist
-if (typeof withEntitlements !== 'function') {
-  throw new Error('withEntitlements is not available in @expo/config-plugins. Please update the package: npm install @expo/config-plugins@latest');
-}
-if (typeof withXcodeProject !== 'function') {
-  throw new Error('withXcodeProject is not available in @expo/config-plugins. Please update the package: npm install @expo/config-plugins@latest');
-}
-
 const SHARE_EXTENSION_NAME = 'ShareExtension';
 const APP_GROUP_ID = 'group.com.anonymous.earshotmobile';
-const SHARE_EXTENSION_BUNDLE_ID = 'com.anonymous.earshotmobile.ShareExtension';
 
 const withShareExtension = (config) => {
-  // Add App Group to main app entitlements
-  config = withEntitlements(config, (config) => {
-    if (!config.modResults['com.apple.security.application-groups']) {
-      config.modResults['com.apple.security.application-groups'] = [APP_GROUP_ID];
-    } else {
-      const appGroups = config.modResults['com.apple.security.application-groups'];
-      if (!appGroups.includes(APP_GROUP_ID)) {
-        appGroups.push(APP_GROUP_ID);
+  // Create share extension files during prebuild
+  config = withDangerousMod(config, [
+    'ios',
+    async (config) => {
+      const projectPath = config.modRequest.platformProjectRoot;
+      const sourceExtensionPath = path.join(config.modRequest.projectRoot, 'share-extension');
+      const targetExtensionPath = path.join(projectPath, SHARE_EXTENSION_NAME);
+
+      // Create share extension directory
+      if (!fs.existsSync(targetExtensionPath)) {
+        fs.mkdirSync(targetExtensionPath, { recursive: true });
       }
-    }
-    return config;
-  });
 
-  // Modify Xcode project to add share extension
-  config = withXcodeProject(config, (config) => {
-    const xcodeProject = config.modResults;
-    const projectPath = config.modRequest.projectRoot;
-    const iosPath = path.join(projectPath, 'ios');
-    
-    // Source files location (from share-extension folder)
-    const sourceExtensionPath = path.join(projectPath, 'share-extension');
-    const targetExtensionPath = path.join(iosPath, SHARE_EXTENSION_NAME);
-
-    // Create share extension directory in ios folder
-    if (!fs.existsSync(targetExtensionPath)) {
-      fs.mkdirSync(targetExtensionPath, { recursive: true });
-    }
-
-    // Copy ShareViewController.swift from share-extension folder
-    const sourceSwiftFile = path.join(sourceExtensionPath, 'ShareViewController.swift');
-    const targetSwiftFile = path.join(targetExtensionPath, 'ShareViewController.swift');
-    if (fs.existsSync(sourceSwiftFile)) {
-      fs.copyFileSync(sourceSwiftFile, targetSwiftFile);
-    } else {
-      // Create default ShareViewController if source doesn't exist
-      const defaultSwiftCode = `import UIKit
+      // Copy or create ShareViewController.swift
+      const sourceSwiftFile = path.join(sourceExtensionPath, 'ShareViewController.swift');
+      const targetSwiftFile = path.join(targetExtensionPath, 'ShareViewController.swift');
+      if (fs.existsSync(sourceSwiftFile)) {
+        fs.copyFileSync(sourceSwiftFile, targetSwiftFile);
+      } else {
+        const defaultSwiftCode = `import UIKit
 import Social
 import UniformTypeIdentifiers
 
@@ -132,17 +103,16 @@ class ShareViewController: SLComposeServiceViewController {
     }
 }
 `;
-      fs.writeFileSync(targetSwiftFile, defaultSwiftCode);
-    }
+        fs.writeFileSync(targetSwiftFile, defaultSwiftCode);
+      }
 
-    // Copy or create Info.plist
-    const sourceInfoPlist = path.join(sourceExtensionPath, 'Info.plist');
-    const targetInfoPlist = path.join(targetExtensionPath, 'Info.plist');
-    if (fs.existsSync(sourceInfoPlist)) {
-      fs.copyFileSync(sourceInfoPlist, targetInfoPlist);
-    } else {
-      // Create default Info.plist
-      const defaultInfoPlist = `<?xml version="1.0" encoding="UTF-8"?>
+      // Copy or create Info.plist
+      const sourceInfoPlist = path.join(sourceExtensionPath, 'Info.plist');
+      const targetInfoPlist = path.join(targetExtensionPath, 'Info.plist');
+      if (fs.existsSync(sourceInfoPlist)) {
+        fs.copyFileSync(sourceInfoPlist, targetInfoPlist);
+      } else {
+        const defaultInfoPlist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -186,86 +156,15 @@ class ShareViewController: SLComposeServiceViewController {
 </dict>
 </plist>
 `;
-      fs.writeFileSync(targetInfoPlist, defaultInfoPlist);
-    }
-
-    // Get the main app target
-    const mainTarget = xcodeProject.getTarget('earshotmobile') || xcodeProject.getFirstTarget();
-    if (!mainTarget) {
-      console.warn('Could not find main app target');
-      return config;
-    }
-
-    const mainTargetUuid = mainTarget.uuid;
-    const projectName = xcodeProject.getFirstProject()?.name || 'earshotmobile';
-
-    // Check if share extension target already exists
-    const existingTarget = xcodeProject.getTarget(SHARE_EXTENSION_NAME);
-    if (existingTarget) {
-      console.log('Share extension target already exists');
-      return config;
-    }
-
-    // Create share extension target
-    const shareExtensionTarget = xcodeProject.addTarget(
-      SHARE_EXTENSION_NAME,
-      'app_extension',
-      SHARE_EXTENSION_NAME,
-      `ios/${SHARE_EXTENSION_NAME}`
-    );
-
-    // Set bundle identifier for share extension
-    xcodeProject.addBuildProperty('PRODUCT_BUNDLE_IDENTIFIER', SHARE_EXTENSION_BUNDLE_ID, undefined, shareExtensionTarget.uuid);
-    xcodeProject.addBuildProperty('SWIFT_VERSION', '5.0', undefined, shareExtensionTarget.uuid);
-    xcodeProject.addBuildProperty('DEVELOPMENT_TEAM', '', undefined, shareExtensionTarget.uuid);
-    xcodeProject.addBuildProperty('CODE_SIGN_STYLE', 'Automatic', undefined, shareExtensionTarget.uuid);
-
-    // Add Swift file to target
-    const swiftFileRef = xcodeProject.addFile(
-      path.join('ios', SHARE_EXTENSION_NAME, 'ShareViewController.swift'),
-      shareExtensionTarget.targetType,
-      { target: shareExtensionTarget.uuid }
-    );
-
-    // Add Info.plist to target
-    xcodeProject.addFile(
-      path.join('ios', SHARE_EXTENSION_NAME, 'Info.plist'),
-      shareExtensionTarget.targetType,
-      { target: shareExtensionTarget.uuid }
-    );
-
-    // Add App Group capability to share extension
-    const shareExtensionEntitlementsPath = path.join(iosPath, SHARE_EXTENSION_NAME, `${SHARE_EXTENSION_NAME}.entitlements`);
-    if (!fs.existsSync(shareExtensionEntitlementsPath)) {
-      const entitlements = {
-        'com.apple.security.application-groups': [APP_GROUP_ID]
-      };
-      fs.writeFileSync(shareExtensionEntitlementsPath, JSON.stringify(entitlements, null, 2));
-    }
-
-    xcodeProject.addBuildProperty('CODE_SIGN_ENTITLEMENTS', `${SHARE_EXTENSION_NAME}/${SHARE_EXTENSION_NAME}.entitlements`, undefined, shareExtensionTarget.uuid);
-
-    // Add share extension as dependency to main app
-    xcodeProject.addTargetDependency(mainTargetUuid, shareExtensionTarget.uuid);
-
-    // Add share extension to embed app extensions build phase
-    const embedPhase = xcodeProject.pbxEmbedFrameworksBuildPhaseObj(mainTargetUuid);
-    if (embedPhase) {
-      const embedFile = xcodeProject.addFile(
-        `\$(BUILT_PRODUCTS_DIR)/${SHARE_EXTENSION_NAME}.appex`,
-        embedPhase.uuid,
-        { target: mainTargetUuid }
-      );
-      if (embedFile) {
-        xcodeProject.addToPbxEmbedFrameworksBuildPhase(embedFile);
+        fs.writeFileSync(targetInfoPlist, defaultInfoPlist);
       }
-    }
 
-    return config;
-  });
+      console.log('Share extension files created. Note: Xcode project target must be added manually or via expo prebuild.');
+      return config;
+    },
+  ]);
 
   return config;
 };
 
 module.exports = withShareExtension;
-
