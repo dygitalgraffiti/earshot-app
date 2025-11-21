@@ -1,18 +1,30 @@
-import { ConfigPlugin, withEntitlements, withXcodeProject } from '@expo/config-plugins';
-import * as fs from 'fs';
-import * as path from 'path';
+const configPlugins = require('@expo/config-plugins');
+const fs = require('fs');
+const path = require('path');
+
+// Get functions from config plugins
+const withEntitlements = configPlugins.withEntitlements;
+const withXcodeProject = configPlugins.withXcodeProject;
+
+// Verify they exist
+if (typeof withEntitlements !== 'function') {
+  throw new Error('withEntitlements is not available in @expo/config-plugins. Please update the package: npm install @expo/config-plugins@latest');
+}
+if (typeof withXcodeProject !== 'function') {
+  throw new Error('withXcodeProject is not available in @expo/config-plugins. Please update the package: npm install @expo/config-plugins@latest');
+}
 
 const SHARE_EXTENSION_NAME = 'ShareExtension';
 const APP_GROUP_ID = 'group.com.anonymous.earshotmobile';
 const SHARE_EXTENSION_BUNDLE_ID = 'com.anonymous.earshotmobile.ShareExtension';
 
-const withShareExtension: ConfigPlugin = (config) => {
+const withShareExtension = (config) => {
   // Add App Group to main app entitlements
   config = withEntitlements(config, (config) => {
     if (!config.modResults['com.apple.security.application-groups']) {
       config.modResults['com.apple.security.application-groups'] = [APP_GROUP_ID];
     } else {
-      const appGroups = config.modResults['com.apple.security.application-groups'] as string[];
+      const appGroups = config.modResults['com.apple.security.application-groups'];
       if (!appGroups.includes(APP_GROUP_ID)) {
         appGroups.push(APP_GROUP_ID);
       }
@@ -101,7 +113,7 @@ class ShareViewController: SLComposeServiceViewController {
         sharedDefaults.set(url, forKey: "pendingShareUrl")
         sharedDefaults.synchronize()
         
-        if let url = URL(string: "earshotmobile://share?url=\(url.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")") {
+        if let url = URL(string: "earshotmobile://share?url=\\(url.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")") {
             var responder = self as UIResponder?
             while responder != nil {
                 if let application = responder as? UIApplication {
@@ -255,4 +267,5 @@ class ShareViewController: SLComposeServiceViewController {
   return config;
 };
 
-export default withShareExtension;
+module.exports = withShareExtension;
+
