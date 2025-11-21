@@ -1,19 +1,27 @@
 // app/ProfileScreen.tsx
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    FlatList,
-    Image,
-    Linking,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Image,
+  Linking,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 const API_URL = 'https://earshot-app.onrender.com';
@@ -54,6 +62,73 @@ export default function ProfileScreen() {
   const [isEditingUsername, setIsEditingUsername] = useState(false);
   const [editedUsername, setEditedUsername] = useState('');
   const [updatingUsername, setUpdatingUsername] = useState(false);
+
+  // Animation values for swipe back - smoother with better spring config
+  const translateX = useSharedValue(0);
+  const opacity = useSharedValue(1);
+
+  // Function to navigate back to following feed
+  const navigateBackToFollowing = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // Store that we want to show following feed
+    await AsyncStorage.setItem('lastFeedType', 'following');
+    router.push('/');
+  };
+
+  // Horizontal swipe gesture for going back (swipe RIGHT to go back) - more sensitive
+  const swipeBackGesture = Gesture.Pan()
+    .activeOffsetX([5, 100]) // Lower activation threshold - easier to start (was 10)
+    .failOffsetY([-20, 20]) // More lenient vertical tolerance (was 15)
+    .onUpdate((e) => {
+      'worklet';
+      // More lenient horizontal detection - easier to trigger
+      const isHorizontal = Math.abs(e.translationX) > Math.abs(e.translationY) * 1.2; // Was 1.5
+      if (isHorizontal && e.translationX > 0) {
+        // Smooth interpolation for better feel
+        const progress = Math.min(Math.abs(e.translationX) / 200, 1); // More responsive (was 250)
+        translateX.value = e.translationX;
+        opacity.value = 1 - progress * 0.7; // Fade out more gradually
+      }
+    })
+    .onEnd((e) => {
+      'worklet';
+      const threshold = 50; // Much lower threshold for easier swiping (was 70)
+      const isHorizontal = Math.abs(e.translationX) > Math.abs(e.translationY) * 1.2; // More lenient (was 1.5)
+      
+      if (isHorizontal && e.translationX > threshold) {
+        // Swipe right detected - navigate back to following
+        // Smoother spring animation
+        translateX.value = withSpring(400, {
+          damping: 15, // Lower damping for smoother feel
+          stiffness: 200, // Lower stiffness for more fluid motion
+          mass: 0.8, // Lighter mass for quicker response
+        });
+        opacity.value = withSpring(0, {
+          damping: 15,
+          stiffness: 200,
+          mass: 0.8,
+        });
+        runOnJS(navigateBackToFollowing)();
+      } else {
+        // Return to original position with smooth spring
+        translateX.value = withSpring(0, {
+          damping: 20,
+          stiffness: 300,
+          mass: 0.5,
+        });
+        opacity.value = withSpring(1, {
+          damping: 20,
+          stiffness: 300,
+          mass: 0.5,
+        });
+      }
+    });
+
+  // Animated style for swipe back - smoother with better interpolation
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }],
+    opacity: opacity.value,
+  }));
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -351,8 +426,11 @@ export default function ProfileScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaView style={styles.container}>
+        <GestureDetector gesture={swipeBackGesture}>
+          <Animated.View style={[{ flex: 1 }, animatedStyle]}>
+            <View style={styles.header}>
         <View style={styles.usernameRow}>
           {isEditingUsername ? (
             <View style={styles.usernameEditContainer}>
@@ -500,7 +578,10 @@ export default function ProfileScreen() {
           </View>
         }
       />
-    </SafeAreaView>
+          </Animated.View>
+        </GestureDetector>
+      </SafeAreaView>
+    </GestureHandlerRootView>
   );
 }
 

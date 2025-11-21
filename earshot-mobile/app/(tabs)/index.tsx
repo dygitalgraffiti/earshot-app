@@ -32,6 +32,37 @@ const VINYL_SIZE = width * 0.75;
 
 const API_URL = 'https://earshot-app.onrender.com';
 
+// Helper function for fetch with timeout and retry
+const fetchWithTimeout = async (
+  url: string,
+  options: RequestInit = {},
+  timeout: number = 10000,
+  retries: number = 2
+): Promise<Response> => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error: any) {
+    clearTimeout(timeoutId);
+    
+    // Retry on timeout or network errors
+    if (retries > 0 && (error.name === 'AbortError' || error.message?.includes('network'))) {
+      console.log(`Retrying request (${retries} retries left)...`);
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1s before retry
+      return fetchWithTimeout(url, options, timeout, retries - 1);
+    }
+    
+    throw error;
+  }
+};
+
 // Helper functions for URL extraction and parsing
 const extractUrlFromText = (text: string): string => {
   // Simple URL extraction - looks for http/https URLs
@@ -80,6 +111,25 @@ export default function HomeScreen() {
   const [isFlipped, setIsFlipped] = useState(false);
   const [listenerCount, setListenerCount] = useState(35);
   const [feedType, setFeedType] = useState<'global' | 'following'>('global'); // Feed type: global or following
+
+  // Check for last feed type when screen comes into focus (e.g., returning from profile)
+  useFocusEffect(
+    useCallback(() => {
+      const checkLastFeedType = async () => {
+        const lastFeedType = await AsyncStorage.getItem('lastFeedType');
+        if (lastFeedType === 'following' && feedType !== 'following') {
+          setFeedType('following');
+          setCurrentPostIndex(0);
+          if (token) {
+            loadFeed(token, 'following');
+          }
+          // Clear it after using
+          await AsyncStorage.removeItem('lastFeedType');
+        }
+      };
+      checkLastFeedType();
+    }, [token, feedType])
+  );
   const [isSaved, setIsSaved] = useState(false); // Track if current post is saved to crate
   const [saving, setSaving] = useState(false); // Track if save operation is in progress
   const [postSaveCounts, setPostSaveCounts] = useState<Record<number, number>>({}); // Random save counts per post (1-25)
@@ -94,6 +144,7 @@ export default function HomeScreen() {
   const currentFeedType = useSharedValue<'global' | 'following'>('global');
   const flipRotation = useSharedValue(0);
   const pulseOpacity = useSharedValue(0.4);
+  const horizontalTranslate = useSharedValue(0); // For preview effect during swipe
 
   // Load token on mount and handle share intents
   useEffect(() => {
@@ -211,6 +262,8 @@ export default function HomeScreen() {
   useEffect(() => {
     console.log('feedType changed to:', feedType);
     currentFeedType.value = feedType; // Update shared value when state changes
+    // Reset horizontal translation when feed type changes
+    horizontalTranslate.value = 0;
   }, [feedType]);
 
   const handleIncomingShare = async (sharedData: string) => {
@@ -413,9 +466,9 @@ export default function HomeScreen() {
   /* ────── AUTH ────── */
   const fetchCurrentUsername = async (t: string) => {
     try {
-      const res = await fetch(`${API_URL}/api/me`, {
+      const res = await fetchWithTimeout(`${API_URL}/api/me`, {
         headers: { Authorization: `Bearer ${t}` },
-      });
+      }, 10000, 2);
       if (res.ok) {
         const userData = await res.json();
         if (userData.username) {
@@ -451,11 +504,11 @@ export default function HomeScreen() {
       
       console.log('Login request:', { device_id: requestBody.device_id, has_username: !!requestBody.username });
       
-      const res = await fetch(`${API_URL}/api/login`, {
+      const res = await fetchWithTimeout(`${API_URL}/api/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),
-      });
+      }, 15000, 2);
       
       console.log('Login response status:', res.status, res.statusText);
       
@@ -492,9 +545,9 @@ export default function HomeScreen() {
   const loadFeed = async (t: string, type: 'global' | 'following' = feedType) => {
     try {
       setLoading(true);
-      const res = await fetch(`${API_URL}/api/feed?type=${type}`, {
+      const res = await fetchWithTimeout(`${API_URL}/api/feed?type=${type}`, {
         headers: { Authorization: `Bearer ${t}` },
-      });
+      }, 15000, 2);
       
       if (!res.ok) {
         if (res.status === 401) {
@@ -508,6 +561,20 @@ export default function HomeScreen() {
           // They'll see login screen on next interaction
           return;
         }
+        
+        // Handle 502 Bad Gateway (server down/spinning up)
+        if (res.status === 502 || res.status === 503) {
+          console.error('Server unavailable (502/503), showing error');
+          Alert.alert(
+            'Server Unavailable',
+            'The server is starting up. Please try again in a few moments.',
+            [{ text: 'OK', onPress: () => setLoading(false) }]
+          );
+          setFeed([]);
+          setLoading(false);
+          return;
+        }
+        
         console.error('Feed API error:', res.status, res.statusText);
         throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }
@@ -525,9 +592,20 @@ export default function HomeScreen() {
         setFeed([]);
         Alert.alert('Feed Error', 'Invalid response from server');
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error('Feed error:', e);
-      Alert.alert('Feed Error', `Could not load posts: ${e instanceof Error ? e.message : 'Unknown error'}`);
+      
+      // Handle timeout/network errors
+      if (e.name === 'AbortError' || e.message?.includes('timeout') || e.message?.includes('network')) {
+        Alert.alert(
+          'Connection Timeout',
+          'The server is taking too long to respond. This might be because it\'s starting up. Please try again.',
+          [{ text: 'OK', onPress: () => setLoading(false) }]
+        );
+      } else {
+        Alert.alert('Feed Error', `Could not load posts: ${e instanceof Error ? e.message : 'Unknown error'}`);
+      }
+      
       setFeed([]);
       setLoading(false); // Ensure loading is set to false on error
     } finally {
@@ -550,14 +628,14 @@ export default function HomeScreen() {
 
     try {
       console.log('Posting track:', url.trim());
-      const res = await fetch(`${API_URL}/api/post`, {
+      const res = await fetchWithTimeout(`${API_URL}/api/post`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ url: url.trim() }),
-      });
+      }, 15000, 2);
       
       if (!res.ok) {
         if (res.status === 401) {
@@ -599,13 +677,13 @@ export default function HomeScreen() {
     setSaving(true);
     try {
       const method = isSaved ? 'DELETE' : 'POST';
-      const response = await fetch(`${API_URL}/api/crate/${currentPost.id}`, {
+      const response = await fetchWithTimeout(`${API_URL}/api/crate/${currentPost.id}`, {
         method,
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-      });
+      }, 10000, 2);
       
       if (response.ok) {
         const data = await response.json();
@@ -683,7 +761,18 @@ export default function HomeScreen() {
     }
   };
 
-  // Horizontal swipe gesture for switching feeds
+  const navigateToProfile = () => {
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      if (currentUsername) {
+        navigation.navigate('ProfileScreen', { username: currentUsername });
+      }
+    } catch (error) {
+      console.error('Error navigating to profile:', error);
+    }
+  };
+
+  // Horizontal swipe gesture for switching feeds with preview effect
   const horizontalPanGesture = Gesture.Pan()
     .activeOffsetX([-10, 10]) // Only activate if horizontal movement is significant
     .failOffsetY([-15, 15]) // Fail if vertical movement is too large (prioritize vertical swipe)
@@ -691,9 +780,10 @@ export default function HomeScreen() {
       'worklet';
       // Check if this is clearly a horizontal swipe (horizontal movement > vertical movement)
       const isHorizontal = Math.abs(e.translationX) > Math.abs(e.translationY) * 1.5;
-      if (!isHorizontal) {
-        // If it's more vertical than horizontal, cancel this gesture
-        return;
+      if (isHorizontal) {
+        // Update translation for preview effect - limit to screen width
+        const maxTranslate = width * 0.8; // Max 80% of screen width
+        horizontalTranslate.value = Math.max(-maxTranslate, Math.min(maxTranslate, e.translationX));
       }
     })
     .onEnd(e => {
@@ -702,15 +792,56 @@ export default function HomeScreen() {
       // Only trigger if horizontal movement is clearly dominant
       const isHorizontal = Math.abs(e.translationX) > Math.abs(e.translationY) * 1.5;
       if (!isHorizontal) {
+        // Reset translation if not horizontal
+        horizontalTranslate.value = withSpring(0, {
+          damping: 20,
+          stiffness: 300,
+        });
         return;
       }
       const feedTypeValue = currentFeedType.value; // Get current feed type from shared value
       if (e.translationX < -threshold && feedTypeValue === 'global') {
         // Swipe left on global feed → switch to following
+        horizontalTranslate.value = withSpring(-width, {
+          damping: 15,
+          stiffness: 200,
+        });
         runOnJS(switchToFollowing)();
+        // Reset after switch
+        setTimeout(() => {
+          'worklet';
+          horizontalTranslate.value = 0;
+        }, 300);
+      } else if (e.translationX < -threshold && feedTypeValue === 'following') {
+        // Swipe left on following feed → navigate to profile
+        horizontalTranslate.value = withSpring(-width, {
+          damping: 15,
+          stiffness: 200,
+        });
+        runOnJS(navigateToProfile)();
+        // Reset after navigation
+        setTimeout(() => {
+          'worklet';
+          horizontalTranslate.value = 0;
+        }, 300);
       } else if (e.translationX > threshold && feedTypeValue === 'following') {
         // Swipe right on following feed → switch to global
+        horizontalTranslate.value = withSpring(width, {
+          damping: 15,
+          stiffness: 200,
+        });
         runOnJS(switchToGlobal)();
+        // Reset after switch
+        setTimeout(() => {
+          'worklet';
+          horizontalTranslate.value = 0;
+        }, 300);
+      } else {
+        // Return to original position with smooth spring
+        horizontalTranslate.value = withSpring(0, {
+          damping: 20,
+          stiffness: 300,
+        });
       }
     });
 
@@ -877,6 +1008,11 @@ export default function HomeScreen() {
     opacity: pulseOpacity.value,
   }));
 
+  // Animated style for horizontal preview effect
+  const horizontalPreviewStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: horizontalTranslate.value }],
+  }));
+
   /* ────── UI ────── */
   if (!token) {
     return (
@@ -918,27 +1054,12 @@ export default function HomeScreen() {
     <SafeAreaProvider style={{ flex: 1, backgroundColor: '#000' }}>
       <GestureHandlerRootView style={{ flex: 1 }}>
         <GestureDetector gesture={horizontalPanGesture}>
-          <View style={[styles.container, { paddingTop: insets.top, position: 'relative' }]}>
+          <Animated.View style={[styles.container, { paddingTop: insets.top, position: 'relative' }, horizontalPreviewStyle]}>
             {/* Header */}
             <View style={styles.header} key={`header-${feedType}`}>
           <View style={styles.headerContent}>
             <View style={styles.headerLeft}>
-              {feedType === 'following' && (
-                <TouchableOpacity
-                  key="back-button"
-                  style={styles.backButton}
-                  onPress={() => {
-                    console.log('Back button pressed, switching to global feed');
-                    setFeedType('global');
-                    setCurrentPostIndex(0);
-                    if (token) {
-                      loadFeed(token, 'global');
-                    }
-                  }}
-                >
-                  <Text style={styles.backButtonText}>← BACK</Text>
-          </TouchableOpacity>
-              )}
+              {/* Back button removed - use swipe right to go back */}
         </View>
             <View style={styles.headerCenter}>
               <Text style={styles.logo}>Earshot</Text>
@@ -1116,7 +1237,7 @@ export default function HomeScreen() {
             </View>
           </GestureDetector>
         )}
-          </View>
+          </Animated.View>
         </GestureDetector>
 
         {/* Share Modal */}
