@@ -9,6 +9,7 @@ import {
   Dimensions,
   Image,
   Linking,
+  Modal,
   StyleSheet,
   Text,
   TextInput,
@@ -24,6 +25,7 @@ import Animated, {
   withTiming
 } from 'react-native-reanimated';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { parseMusicUrl as parseMusicUrlUtil } from '../../utils/urlParser';
 
 const { width, height } = Dimensions.get('window');
 const VINYL_SIZE = width * 0.75;
@@ -39,15 +41,14 @@ const extractUrlFromText = (text: string): string => {
 };
 
 const parseMusicUrl = (url: string): { isValid: boolean; platform?: string; url?: string } => {
-  // Simple validation - check if it's a YouTube or Spotify URL
-  const youtubeRegex = /(youtube\.com|youtu\.be)/i;
-  const spotifyRegex = /(spotify\.com|open\.spotify\.com)/i;
-  
-  if (youtubeRegex.test(url)) {
-    return { isValid: true, platform: 'youtube', url };
-  }
-  if (spotifyRegex.test(url)) {
-    return { isValid: true, platform: 'spotify', url };
+  // Use the proper URL parser utility that supports Spotify, Apple Music, and YouTube
+  const parsed = parseMusicUrlUtil(url);
+  if (parsed.isValid) {
+    return { 
+      isValid: true, 
+      platform: parsed.platform, 
+      url: parsed.url 
+    };
   }
   return { isValid: false, url };
 };
@@ -83,6 +84,7 @@ export default function HomeScreen() {
   const [saving, setSaving] = useState(false); // Track if save operation is in progress
   const [postSaveCounts, setPostSaveCounts] = useState<Record<number, number>>({}); // Random save counts per post (1-25)
   const [activeListeners, setActiveListeners] = useState(5); // Random active listeners (1-10)
+  const [showShareModal, setShowShareModal] = useState(false); // Share modal visibility
 
   // Animation values
   const translateY = useSharedValue(0);
@@ -295,6 +297,34 @@ export default function HomeScreen() {
   const saveCount = currentPost?.save_count || 0;
   // Get random save count for this post (1-25)
   const displaySaveCount = currentPost ? (postSaveCounts[currentPost.id] || 0) : 0;
+
+  // Calculate dynamic bottom position based on title length
+  const calculateInfoOverlayBottom = () => {
+    if (!currentPost) return -240;
+    const titleLength = currentPost.title?.length || 0;
+    const basePosition = -200; // Base position for short titles
+    
+    // Estimate space needed: longer titles need more space
+    // Rough estimate: ~40 characters per line, 2 lines max
+    // Add extra space for very long titles
+    let extraSpace = 0;
+    if (titleLength > 60) {
+      // Very long titles (like "Big Sean - Supa Dupa (Official Music Video) Team Money iceman")
+      extraSpace = -60;
+    } else if (titleLength > 40) {
+      // Medium-long titles
+      extraSpace = -30;
+    } else if (titleLength > 25) {
+      // Medium titles
+      extraSpace = -10;
+    }
+    // else short titles stay at base position
+    
+    // Add space if artist is shown
+    const artistSpace = showArtist ? -20 : 0;
+    
+    return basePosition + extraSpace + artistSpace;
+  };
 
   // Debug: Log when component renders
   useEffect(() => {
@@ -1034,7 +1064,7 @@ export default function HomeScreen() {
                 </GestureDetector>
 
                 {/* Info Overlay - Always visible, outside flip container */}
-                <View style={styles.infoOverlay}>
+                <View style={[styles.infoOverlay, { bottom: calculateInfoOverlayBottom() }]}>
                   <Text style={styles.title} numberOfLines={2}>
                     {currentPost.title}
                   </Text>
@@ -1056,6 +1086,15 @@ export default function HomeScreen() {
                     ) : (
                       <Text style={styles.playText}>▶ Play</Text>
                     )}
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.shareButtonInline}
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      setShowShareModal(true);
+                    }}
+                  >
+                    <Text style={styles.shareButtonTextInline}>Paste Link to Share</Text>
                   </TouchableOpacity>
                 </View>
               </Animated.View>
@@ -1079,6 +1118,62 @@ export default function HomeScreen() {
         )}
           </View>
         </GestureDetector>
+
+        {/* Share Modal */}
+        <Modal
+          visible={showShareModal}
+          transparent={true}
+          animationType="slide"
+          onRequestClose={() => setShowShareModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Share Music</Text>
+              <Text style={styles.modalSubtitle}>Paste a Spotify, Apple Music, or YouTube link</Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="https://open.spotify.com/track/..."
+                placeholderTextColor="#666"
+                value={url}
+                onChangeText={setUrl}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+                multiline={false}
+              />
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.modalButtonCancel]}
+                  onPress={() => {
+                    setShowShareModal(false);
+                    setUrl('');
+                  }}
+                >
+                  <Text style={styles.modalButtonTextCancel}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.modalButtonShare]}
+                  onPress={async () => {
+                    if (!url.trim()) {
+                      Alert.alert('Empty URL', 'Please enter a URL to share');
+                      return;
+                    }
+                    // Validate URL
+                    const parsed = parseMusicUrl(url.trim());
+                    if (!parsed.isValid) {
+                      Alert.alert('Invalid URL', 'Please enter a valid Spotify, Apple Music, or YouTube link');
+                      return;
+                    }
+                    setShowShareModal(false);
+                    await postTrack();
+                  }}
+                >
+                  <Text style={styles.modalButtonTextShare}>Share</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </GestureHandlerRootView>
     </SafeAreaProvider>
   );
@@ -1412,7 +1507,7 @@ const styles = StyleSheet.create({
   },
   infoOverlay: {
     position: 'absolute',
-    bottom: -160,
+    bottom: -240,
     width: '100%',
     alignItems: 'center',
     paddingHorizontal: 20,
@@ -1442,10 +1537,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingVertical: 10,
     borderRadius: 20,
+    marginBottom: 12,
   },
   playText: {
     color: '#fff',
     fontWeight: 'bold',
+    fontSize: 14,
+  },
+  shareButtonInline: {
+    backgroundColor: '#333',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#555',
+  },
+  shareButtonTextInline: {
+    color: '#fff',
+    fontWeight: '600',
     fontSize: 14,
   },
   swipeHintContainer: {
@@ -1504,5 +1613,74 @@ const styles = StyleSheet.create({
   emptyText: {
     color: '#666',
     fontSize: 16,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 20,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+    borderWidth: 2,
+    borderColor: '#333',
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: '#888',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  modalInput: {
+    backgroundColor: '#222',
+    color: '#fff',
+    padding: 16,
+    borderRadius: 12,
+    fontSize: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  modalButtonCancel: {
+    backgroundColor: '#333',
+    borderWidth: 1,
+    borderColor: '#555',
+  },
+  modalButtonShare: {
+    backgroundColor: '#1DB954',
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  modalButtonTextCancel: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalButtonTextShare: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });
