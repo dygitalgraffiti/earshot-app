@@ -79,6 +79,7 @@
           }
         }
       ],
+      "./plugins/withAppIcon.js",
       "./plugins/withShareExtension.js"
     ],
     "experiments": {
