@@ -10,7 +10,8 @@
     "newArchEnabled": true,
     "ios": {
       "bundleIdentifier": "com.anonymous.earshotmobile",
-      "supportsTablet": true,
+      "icon": "./assets/images/icon.png",
+      "supportsTablet": false,
       "entitlements": {
         "com.apple.security.application-groups": [
           "group.com.anonymous.earshotmobile"
