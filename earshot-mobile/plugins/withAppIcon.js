@@ -8,16 +8,24 @@ const path = require('path');
  * Works with EAS Build by creating directory structure if needed
  */
 const withAppIcon = (config) => {
+  // Capture expo config from outer scope
+  const expoConfig = config.expo || config;
+  const iosIcon = expoConfig.ios?.icon;
+  const generalIcon = expoConfig.icon;
+  const defaultIcon = './assets/images/icon.png';
+  const iconSource = iosIcon || generalIcon || defaultIcon;
+  const appName = expoConfig.name || expoConfig.slug || 'earshot-mobile';
+  
   return withDangerousMod(config, [
     'ios',
     async (config) => {
       const projectPath = config.modRequest.platformProjectRoot;
       const projectRoot = config.modRequest.projectRoot;
       
-      // Get icon path - try iOS-specific first, then fallback to general
+      // Get icon path
       const iconPath = path.resolve(
         projectRoot, 
-        (config.expo.ios?.icon || config.expo.icon || './assets/images/icon.png').replace('./', '')
+        iconSource.replace('./', '')
       );
       
       console.log('🔍 [withAppIcon] Starting icon sync...');
@@ -32,7 +40,6 @@ const withAppIcon = (config) => {
       }
 
       // Try multiple possible paths for AppIcon.appiconset
-      const appName = config.expo.name || config.expo.slug || 'earshot-mobile';
       const possibleBasePaths = [
         // Standard Expo path (most common)
         path.join(projectPath, appName, 'Images.xcassets'),
