@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "earshot-mobile",
+    "name": "Earshot",
     "slug": "earshot-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -18,6 +18,7 @@
         ]
       },
       "infoPlist": {
+        "CFBundleDisplayName": "Earshot",
         "NSUserActivityTypes": ["INSendMessageIntent"],
         "ITSAppUsesNonExemptEncryption": false,
         "LSSupportsOpeningDocumentsInPlace": true,
