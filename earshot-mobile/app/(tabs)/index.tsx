@@ -10,6 +10,7 @@ import {
   Image,
   Linking,
   Modal,
+  Platform,
   StyleSheet,
   Text,
   TextInput,
@@ -28,7 +29,18 @@ import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-cont
 import { parseMusicUrl as parseMusicUrlUtil } from '../../utils/urlParser';
 
 const { width, height } = Dimensions.get('window');
-const VINYL_SIZE = width * 0.75;
+
+// Responsive sizing: detect if device is iPad (more conservative detection)
+// iPad typically has width >= 768 in portrait or height >= 1024 in landscape
+const isTablet = Platform.OS === 'ios' && (width >= 768 || (width >= 1024 || height >= 1024));
+
+// Constrain vinyl size for larger screens (max 400px on iPad, 75% width on phone)
+const VINYL_SIZE = isTablet 
+  ? Math.min(400, width * 0.5) 
+  : width * 0.75;
+
+// Max content width for iPad (centers content)
+const MAX_CONTENT_WIDTH = 500;
 
 const API_URL = 'https://earshot-app.onrender.com';
 
@@ -176,7 +188,17 @@ export default function HomeScreen() {
           if (!savedUsername) {
             await fetchCurrentUsername(savedToken);
           }
-          await loadFeed(savedToken);
+          // Try to load feed - if it fails with 401, token will be cleared
+          // For other errors, keep the token and show feed (user can retry)
+          try {
+            await loadFeed(savedToken);
+          } catch (error) {
+            // If loadFeed fails but token wasn't cleared (non-401 error),
+            // still show the feed so user can retry without logging in again
+            console.log('Feed load failed on init, but keeping token:', error);
+            setLoading(false);
+            // Don't clear token on network errors - let user retry
+          }
         } else {
           // No saved token - show login screen and wait for user action
           setLoading(false);
@@ -597,16 +619,29 @@ export default function HomeScreen() {
       
       // Handle timeout/network errors
       if (e.name === 'AbortError' || e.message?.includes('timeout') || e.message?.includes('network')) {
-        Alert.alert(
-          'Connection Timeout',
-          'The server is taking too long to respond. This might be because it\'s starting up. Please try again.',
-          [{ text: 'OK', onPress: () => setLoading(false) }]
-        );
+        // Don't show alert on initial load - just keep existing feed or empty state
+        // User can pull to refresh or try again
+        console.log('Network error loading feed, keeping existing state');
+        // Only show alert if we're not in initial load (feed is empty means initial load)
+        if (feed.length > 0) {
+          Alert.alert(
+            'Connection Timeout',
+            'The server is taking too long to respond. This might be because it\'s starting up. Please try again.',
+            [{ text: 'OK' }]
+          );
+        }
       } else {
-        Alert.alert('Feed Error', `Could not load posts: ${e instanceof Error ? e.message : 'Unknown error'}`);
+        // Only show alert if we have existing feed (not initial load)
+        if (feed.length > 0) {
+          Alert.alert('Feed Error', `Could not load posts: ${e instanceof Error ? e.message : 'Unknown error'}`);
+        }
       }
       
-      setFeed([]);
+      // Don't clear feed on error - keep existing feed if available
+      // Only clear if this was initial load (feed is empty)
+      if (feed.length === 0) {
+        setFeed([]);
+      }
       setLoading(false); // Ensure loading is set to false on error
     } finally {
       setLoading(false); // Double ensure loading is always set to false
@@ -1015,25 +1050,37 @@ export default function HomeScreen() {
 
   /* ────── UI ────── */
   if (!token) {
+    const loginContent = (
+      <>
+        <Text style={[styles.logo, isTablet && { fontSize: 48 }]}>Earshot</Text>
+        <Text style={styles.slogan}>Share music. Follow friends.</Text>
+        <TextInput
+          placeholder="Username (optional - leave blank for auto-generated)"
+          value={username}
+          onChangeText={setUsername}
+          style={styles.input}
+          autoCapitalize="none"
+          placeholderTextColor="#666"
+        />
+        <TouchableOpacity style={styles.button} onPress={() => login()}>
+          <Text style={styles.buttonText}>CONTINUE</Text>
+        </TouchableOpacity>
+        <Text style={styles.hintText}>
+          Leave blank to get a random username like "purple-bear-3488"
+        </Text>
+      </>
+    );
+
     return (
       <SafeAreaProvider style={{ flex: 1, backgroundColor: '#000' }}>
-        <View style={styles.loginBox}>
-          <Text style={styles.logo}>Earshot</Text>
-          <Text style={styles.slogan}>Share music. Follow friends.</Text>
-          <TextInput
-            placeholder="Username (optional - leave blank for auto-generated)"
-            value={username}
-            onChangeText={setUsername}
-            style={styles.input}
-            autoCapitalize="none"
-            placeholderTextColor="#666"
-          />
-          <TouchableOpacity style={styles.button} onPress={() => login()}>
-            <Text style={styles.buttonText}>CONTINUE</Text>
-          </TouchableOpacity>
-          <Text style={styles.hintText}>
-            Leave blank to get a random username like "purple-bear-3488"
-          </Text>
+        <View style={[styles.loginBox, isTablet && styles.loginBoxTablet]}>
+          {isTablet ? (
+            <View style={{ maxWidth: 400, width: '100%', alignSelf: 'center' }}>
+              {loginContent}
+            </View>
+          ) : (
+            loginContent
+          )}
         </View>
       </SafeAreaProvider>
     );
@@ -1054,15 +1101,20 @@ export default function HomeScreen() {
     <SafeAreaProvider style={{ flex: 1, backgroundColor: '#000' }}>
       <GestureHandlerRootView style={{ flex: 1 }}>
         <GestureDetector gesture={horizontalPanGesture}>
-          <Animated.View style={[styles.container, { paddingTop: insets.top, position: 'relative' }, horizontalPreviewStyle]}>
+          <Animated.View style={[
+            styles.container, 
+            { paddingTop: insets.top, position: 'relative' }, 
+            horizontalPreviewStyle,
+            isTablet && { maxWidth: MAX_CONTENT_WIDTH, alignSelf: 'center', width: '100%' }
+          ]}>
             {/* Header */}
-            <View style={styles.header} key={`header-${feedType}`}>
+            <View style={[styles.header, isTablet && styles.headerTablet]} key={`header-${feedType}`}>
           <View style={styles.headerContent}>
             <View style={styles.headerLeft}>
               {/* Back button removed - use swipe right to go back */}
         </View>
             <View style={styles.headerCenter}>
-              <Text style={styles.logo}>Earshot</Text>
+              <Text style={[styles.logo, isTablet && { fontSize: 48 }]}>Earshot</Text>
               <View style={styles.feedTabs}>
                 <TouchableOpacity
                   style={[styles.feedTab, feedType === 'global' && styles.feedTabActive]}
@@ -1185,12 +1237,12 @@ export default function HomeScreen() {
                 </GestureDetector>
 
                 {/* Info Overlay - Always visible, outside flip container */}
-                <View style={[styles.infoOverlay, { bottom: calculateInfoOverlayBottom() }]}>
-                  <Text style={styles.title} numberOfLines={2}>
+                <View style={[styles.infoOverlay, { bottom: calculateInfoOverlayBottom() }, isTablet && { paddingHorizontal: 40 }]}>
+                  <Text style={[styles.title, isTablet && { fontSize: 24 }]} numberOfLines={2}>
                     {currentPost.title}
                   </Text>
                   {showArtist && (
-                    <Text style={styles.artist} numberOfLines={1}>
+                    <Text style={[styles.artist, isTablet && { fontSize: 18 }]} numberOfLines={1}>
                       {currentPost.artist}
                     </Text>
                   )}
@@ -1248,7 +1300,7 @@ export default function HomeScreen() {
           onRequestClose={() => setShowShareModal(false)}
         >
           <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
+            <View style={[styles.modalContent, isTablet && styles.modalContentTablet]}>
               <Text style={styles.modalTitle}>Share Music</Text>
               <Text style={styles.modalSubtitle}>Paste a Spotify, Apple Music, or YouTube link</Text>
               <TextInput
@@ -1311,6 +1363,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
+  },
+  loginBoxTablet: {
+    padding: 40,
   },
   logo: {
     fontSize: 42,
@@ -1385,6 +1440,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 8,
     paddingBottom: 4,
+  },
+  headerTablet: {
+    paddingHorizontal: 40,
   },
   headerContent: {
     flexDirection: 'row',
@@ -1464,6 +1522,7 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     paddingBottom: 20,
     position: 'relative',
+    width: '100%',
   },
   vinylWrapper: {
     width: VINYL_SIZE,
@@ -1750,6 +1809,10 @@ const styles = StyleSheet.create({
     maxWidth: 400,
     borderWidth: 2,
     borderColor: '#333',
+  },
+  modalContentTablet: {
+    maxWidth: 500,
+    padding: 32,
   },
   modalTitle: {
     fontSize: 24,
