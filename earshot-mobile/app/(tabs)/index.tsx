@@ -1273,7 +1273,11 @@ export default function HomeScreen() {
               </Animated.View>
 
               {/* Listener Count - pulsing text with live dot */}
-              <Animated.View style={[styles.listenerContainer, { bottom: 90 }, pulseStyle]}>
+              <Animated.View style={[
+                styles.listenerContainer, 
+                { bottom: isTablet ? 140 : 90 }, 
+                pulseStyle
+              ]}>
                 <View style={styles.listenerRow}>
                   <View style={styles.liveDot} />
                   <Text style={styles.listenerText}>{listenerCount} listening...</Text>
@@ -1282,7 +1286,7 @@ export default function HomeScreen() {
 
               {/* Swipe Hint - positioned at the bottom */}
               {hasNext && (
-                <View style={[styles.swipeHintContainer, { bottom: 50 }]}>
+                <View style={[styles.swipeHintContainer, { bottom: isTablet ? 100 : 50 }]}>
                   <Text style={styles.swipeHint}>↓ Swipe for next</Text>
                 </View>
               )}
@@ -1691,6 +1695,7 @@ const styles = StyleSheet.create({
     width: '100%',
     alignItems: 'center',
     paddingHorizontal: 20,
+    zIndex: 1,
   },
   title: {
     color: '#fff',
@@ -1743,7 +1748,7 @@ const styles = StyleSheet.create({
     right: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 10,
+    zIndex: 100,
   },
   swipeHint: {
     color: '#666',
@@ -1756,7 +1761,7 @@ const styles = StyleSheet.create({
     right: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 10,
+    zIndex: 100,
   },
   listenerRow: {
     flexDirection: 'row',
