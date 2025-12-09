@@ -28,17 +28,6 @@ import Animated, {
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { parseMusicUrl as parseMusicUrlUtil } from '../../utils/urlParser';
 
-const { width, height } = Dimensions.get('window');
-
-// Responsive sizing: detect if device is iPad (more conservative detection)
-// iPad typically has width >= 768 in portrait or height >= 1024 in landscape
-const isTablet = Platform.OS === 'ios' && (width >= 768 || (width >= 1024 || height >= 1024));
-
-// Constrain vinyl size for larger screens (max 400px on iPad, 75% width on phone)
-const VINYL_SIZE = isTablet 
-  ? Math.min(400, width * 0.5) 
-  : width * 0.75;
-
 // Max content width for iPad (centers content)
 const MAX_CONTENT_WIDTH = 500;
 
@@ -110,6 +99,28 @@ interface Post {
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
+
+  // Get screen dimensions dynamically
+  const [screenData, setScreenData] = useState(() => {
+    const { width, height } = Dimensions.get('window');
+    return { width, height };
+  });
+
+  // Detect iPad dynamically - more reliable in production builds
+  const isTablet = Platform.OS === 'ios' && (screenData.width >= 768 || screenData.width >= 1024 || screenData.height >= 1024);
+  
+  // Constrain vinyl size for larger screens (max 400px on iPad, 75% width on phone)
+  const VINYL_SIZE = isTablet 
+    ? Math.min(400, screenData.width * 0.5) 
+    : screenData.width * 0.75;
+
+  // Update screen dimensions on orientation change
+  useEffect(() => {
+    const subscription = Dimensions.addEventListener('change', ({ window }) => {
+      setScreenData({ width: window.width, height: window.height });
+    });
+    return () => subscription?.remove();
+  }, []);
 
   const [token, setToken] = useState<string | null>(null);
   const [feed, setFeed] = useState<Post[]>([]);
@@ -817,7 +828,7 @@ export default function HomeScreen() {
       const isHorizontal = Math.abs(e.translationX) > Math.abs(e.translationY) * 1.5;
       if (isHorizontal) {
         // Update translation for preview effect - limit to screen width
-        const maxTranslate = width * 0.8; // Max 80% of screen width
+        const maxTranslate = screenData.width * 0.8; // Max 80% of screen width
         horizontalTranslate.value = Math.max(-maxTranslate, Math.min(maxTranslate, e.translationX));
       }
     })
@@ -837,7 +848,7 @@ export default function HomeScreen() {
       const feedTypeValue = currentFeedType.value; // Get current feed type from shared value
       if (e.translationX < -threshold && feedTypeValue === 'global') {
         // Swipe left on global feed → switch to following
-        horizontalTranslate.value = withSpring(-width, {
+        horizontalTranslate.value = withSpring(-screenData.width, {
           damping: 15,
           stiffness: 200,
         });
@@ -849,7 +860,7 @@ export default function HomeScreen() {
         }, 300);
       } else if (e.translationX < -threshold && feedTypeValue === 'following') {
         // Swipe left on following feed → navigate to profile
-        horizontalTranslate.value = withSpring(-width, {
+        horizontalTranslate.value = withSpring(-screenData.width, {
           damping: 15,
           stiffness: 200,
         });
@@ -861,7 +872,7 @@ export default function HomeScreen() {
         }, 300);
       } else if (e.translationX > threshold && feedTypeValue === 'following') {
         // Swipe right on following feed → switch to global
-        horizontalTranslate.value = withSpring(width, {
+        horizontalTranslate.value = withSpring(screenData.width, {
           damping: 15,
           stiffness: 200,
         });
@@ -922,7 +933,7 @@ export default function HomeScreen() {
       const threshold = 50;
       if (e.translationY > threshold && hasNext) {
         // More dramatic exit animation
-        translateY.value = withSpring(height * 1.2, {
+        translateY.value = withSpring(screenData.height * 1.2, {
           damping: 15,
           stiffness: 100,
         });
@@ -934,7 +945,7 @@ export default function HomeScreen() {
         runOnJS(goToNext)();
       } else if (e.translationY < -threshold && hasPrevious) {
         // More dramatic exit animation
-        translateY.value = withSpring(-height * 1.2, {
+        translateY.value = withSpring(-screenData.height * 1.2, {
           damping: 15,
           stiffness: 100,
         });
@@ -1181,18 +1192,64 @@ export default function HomeScreen() {
         ) : (
           <GestureDetector gesture={panGesture}>
             <View style={styles.vinylContainer}>
-              <Animated.View style={[styles.vinylWrapper, animatedStyle]}>
+              <Animated.View style={[{ width: VINYL_SIZE, height: VINYL_SIZE, justifyContent: 'center', alignItems: 'center' }, animatedStyle]}>
                 <GestureDetector gesture={tapGesture}>
-                  <View style={styles.flipContainer}>
+                  <View style={{ width: VINYL_SIZE, height: VINYL_SIZE, position: 'relative' }}>
                     {/* Back face - render first (behind) */}
                     <Animated.View style={[styles.flipFace, styles.flipBack, backFlipStyle]}>
-                      <View style={styles.vinylBack}>
-                        <View style={styles.groove1} />
-                        <View style={styles.groove2} />
-                        <View style={styles.groove3} />
-                        <View style={styles.centerHole} />
+                      <View style={{
+                        width: VINYL_SIZE,
+                        height: VINYL_SIZE,
+                        borderRadius: VINYL_SIZE / 2,
+                        backgroundColor: '#111',
+                        borderWidth: 2,
+                        borderColor: '#333',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        overflow: 'visible',
+                      }}>
+                        <View style={{
+                          position: 'absolute',
+                          width: VINYL_SIZE * 0.7,
+                          height: VINYL_SIZE * 0.7,
+                          borderRadius: (VINYL_SIZE * 0.7) / 2,
+                          borderWidth: 1,
+                          borderColor: '#222',
+                        }} />
+                        <View style={{
+                          position: 'absolute',
+                          width: VINYL_SIZE * 0.85,
+                          height: VINYL_SIZE * 0.85,
+                          borderRadius: (VINYL_SIZE * 0.85) / 2,
+                          borderWidth: 1,
+                          borderColor: '#222',
+                        }} />
+                        <View style={{
+                          position: 'absolute',
+                          width: VINYL_SIZE * 0.95,
+                          height: VINYL_SIZE * 0.95,
+                          borderRadius: (VINYL_SIZE * 0.95) / 2,
+                          borderWidth: 1,
+                          borderColor: '#222',
+                        }} />
+                        <View style={{
+                          position: 'absolute',
+                          width: VINYL_SIZE * 0.08,
+                          height: VINYL_SIZE * 0.08,
+                          borderRadius: (VINYL_SIZE * 0.08) / 2,
+                          backgroundColor: '#000',
+                          borderWidth: 1,
+                          borderColor: '#333',
+                        }} />
                         {currentPost && (
-                          <View style={styles.crateSection}>
+                          <View style={{
+                            position: 'absolute',
+                            top: VINYL_SIZE * 0.35,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            width: '100%',
+                            paddingHorizontal: 20,
+                          }}>
                             {/* Stats text - simple and readable */}
                             <View style={styles.curvedTextWrapper}>
                               <View style={styles.curvedTextRow}>
@@ -1223,14 +1280,61 @@ export default function HomeScreen() {
                     
                     {/* Front face - render last (on top) */}
                     <Animated.View style={[styles.flipFace, frontFlipStyle]}>
-                      <View style={styles.vinyl}>
-                        <View style={styles.vinylCenter}>
-                          <Image source={{ uri: currentPost.thumbnail }} style={styles.albumArt} resizeMode="cover" />
+                      <View style={{
+                        width: VINYL_SIZE,
+                        height: VINYL_SIZE,
+                        borderRadius: VINYL_SIZE / 2,
+                        backgroundColor: '#111',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        position: 'relative',
+                        borderWidth: 2,
+                        borderColor: '#333',
+                      }}>
+                        <View style={{
+                          width: VINYL_SIZE * 0.85,
+                          height: VINYL_SIZE * 0.85,
+                          borderRadius: (VINYL_SIZE * 0.85) / 2,
+                          overflow: 'hidden',
+                          backgroundColor: '#000',
+                          borderWidth: 3,
+                          borderColor: '#1DB954',
+                        }}>
+                          <Image source={{ uri: currentPost.thumbnail }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
                         </View>
-                        <View style={styles.groove1} />
-                        <View style={styles.groove2} />
-                        <View style={styles.groove3} />
-                        <View style={styles.centerHole} />
+                        <View style={{
+                          position: 'absolute',
+                          width: VINYL_SIZE * 0.7,
+                          height: VINYL_SIZE * 0.7,
+                          borderRadius: (VINYL_SIZE * 0.7) / 2,
+                          borderWidth: 1,
+                          borderColor: '#222',
+                        }} />
+                        <View style={{
+                          position: 'absolute',
+                          width: VINYL_SIZE * 0.85,
+                          height: VINYL_SIZE * 0.85,
+                          borderRadius: (VINYL_SIZE * 0.85) / 2,
+                          borderWidth: 1,
+                          borderColor: '#222',
+                        }} />
+                        <View style={{
+                          position: 'absolute',
+                          width: VINYL_SIZE * 0.95,
+                          height: VINYL_SIZE * 0.95,
+                          borderRadius: (VINYL_SIZE * 0.95) / 2,
+                          borderWidth: 1,
+                          borderColor: '#222',
+                        }} />
+                        <View style={{
+                          position: 'absolute',
+                          width: VINYL_SIZE * 0.08,
+                          height: VINYL_SIZE * 0.08,
+                          borderRadius: (VINYL_SIZE * 0.08) / 2,
+                          backgroundColor: '#000',
+                          borderWidth: 1,
+                          borderColor: '#333',
+                        }} />
                       </View>
                     </Animated.View>
                   </View>
@@ -1528,17 +1632,6 @@ const styles = StyleSheet.create({
     position: 'relative',
     width: '100%',
   },
-  vinylWrapper: {
-    width: VINYL_SIZE,
-    height: VINYL_SIZE,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  flipContainer: {
-    width: VINYL_SIZE,
-    height: VINYL_SIZE,
-    position: 'relative',
-  },
   flipFace: {
     width: '100%',
     height: '100%',
@@ -1551,88 +1644,12 @@ const styles = StyleSheet.create({
   flipBack: {
     // Back face - positioned absolutely, opacity controls visibility
   },
-  vinyl: {
-    width: VINYL_SIZE,
-    height: VINYL_SIZE,
-    borderRadius: VINYL_SIZE / 2,
-    backgroundColor: '#111',
-    justifyContent: 'center',
-    alignItems: 'center',
-    position: 'relative',
-    borderWidth: 2,
-    borderColor: '#333',
-  },
-  vinylCenter: {
-    width: VINYL_SIZE * 0.85,
-    height: VINYL_SIZE * 0.85,
-    borderRadius: (VINYL_SIZE * 0.85) / 2,
-    overflow: 'hidden',
-    backgroundColor: '#000',
-    borderWidth: 3,
-    borderColor: '#1DB954',
-  },
-  albumArt: {
-    width: '100%',
-    height: '100%',
-  },
-  groove1: {
-    position: 'absolute',
-    width: VINYL_SIZE * 0.7,
-    height: VINYL_SIZE * 0.7,
-    borderRadius: (VINYL_SIZE * 0.7) / 2,
-    borderWidth: 1,
-    borderColor: '#222',
-  },
-  groove2: {
-    position: 'absolute',
-    width: VINYL_SIZE * 0.85,
-    height: VINYL_SIZE * 0.85,
-    borderRadius: (VINYL_SIZE * 0.85) / 2,
-    borderWidth: 1,
-    borderColor: '#222',
-  },
-  groove3: {
-    position: 'absolute',
-    width: VINYL_SIZE * 0.95,
-    height: VINYL_SIZE * 0.95,
-    borderRadius: (VINYL_SIZE * 0.95) / 2,
-    borderWidth: 1,
-    borderColor: '#222',
-  },
-  centerHole: {
-    position: 'absolute',
-    width: VINYL_SIZE * 0.08,
-    height: VINYL_SIZE * 0.08,
-    borderRadius: (VINYL_SIZE * 0.08) / 2,
-    backgroundColor: '#000',
-    borderWidth: 1,
-    borderColor: '#333',
-  },
-  vinylBack: {
-    width: VINYL_SIZE,
-    height: VINYL_SIZE,
-    borderRadius: VINYL_SIZE / 2,
-    backgroundColor: '#111',
-    borderWidth: 2,
-    borderColor: '#333',
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'visible', // Allow text to be visible
-  },
   backPlaceholder: {
     color: '#555',
     letterSpacing: 1,
     fontSize: 16,
     textTransform: 'uppercase',
     marginTop: 40,
-  },
-  crateSection: {
-    position: 'absolute',
-    top: VINYL_SIZE * 0.35, // Position lower to avoid center hole
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '100%',
-    paddingHorizontal: 20,
   },
   curvedTextWrapper: {
     width: '100%',
