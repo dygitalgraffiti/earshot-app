@@ -11,7 +11,7 @@
     "ios": {
       "bundleIdentifier": "com.anonymous.earshotmobile",
       "icon": "./assets/images/icon.png",
-      "supportsTablet": false,
+      "supportsTablet": true,
       "entitlements": {
         "com.apple.security.application-groups": [
           "group.com.anonymous.earshotmobile"
@@ -22,7 +22,7 @@
         "NSUserActivityTypes": ["INSendMessageIntent"],
         "ITSAppUsesNonExemptEncryption": false,
         "LSSupportsOpeningDocumentsInPlace": true,
-        "UIDeviceFamily": [1],
+        "UIDeviceFamily": [1, 2],
         "CFBundleDocumentTypes": [
           {
             "CFBundleTypeName": "URL",

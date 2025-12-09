@@ -6,7 +6,6 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Dimensions,
   Image,
   Linking,
   Modal,
@@ -15,6 +14,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View
 } from 'react-native';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -100,27 +100,17 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
 
-  // Get screen dimensions dynamically
-  const [screenData, setScreenData] = useState(() => {
-    const { width, height } = Dimensions.get('window');
-    return { width, height };
-  });
+  // Get screen dimensions using hook - more reliable in production builds
+  const { width, height } = useWindowDimensions();
 
   // Detect iPad dynamically - more reliable in production builds
-  const isTablet = Platform.OS === 'ios' && (screenData.width >= 768 || screenData.width >= 1024 || screenData.height >= 1024);
+  // iPad typically has width >= 768 in portrait or >= 1024 in landscape
+  const isTablet = Platform.OS === 'ios' && (width >= 768 || width >= 1024 || height >= 1024);
   
   // Constrain vinyl size for larger screens (max 400px on iPad, 75% width on phone)
   const VINYL_SIZE = isTablet 
-    ? Math.min(400, screenData.width * 0.5) 
-    : screenData.width * 0.75;
-
-  // Update screen dimensions on orientation change
-  useEffect(() => {
-    const subscription = Dimensions.addEventListener('change', ({ window }) => {
-      setScreenData({ width: window.width, height: window.height });
-    });
-    return () => subscription?.remove();
-  }, []);
+    ? Math.min(400, width * 0.5) 
+    : width * 0.75;
 
   const [token, setToken] = useState<string | null>(null);
   const [feed, setFeed] = useState<Post[]>([]);
@@ -168,6 +158,16 @@ export default function HomeScreen() {
   const flipRotation = useSharedValue(0);
   const pulseOpacity = useSharedValue(0.4);
   const horizontalTranslate = useSharedValue(0); // For preview effect during swipe
+  
+  // Store screen dimensions in shared values for use in worklets
+  const screenWidth = useSharedValue(width);
+  const screenHeight = useSharedValue(height);
+  
+  // Update shared values when dimensions change
+  useEffect(() => {
+    screenWidth.value = width;
+    screenHeight.value = height;
+  }, [width, height]);
 
   // Load token on mount and handle share intents
   useEffect(() => {
@@ -828,7 +828,7 @@ export default function HomeScreen() {
       const isHorizontal = Math.abs(e.translationX) > Math.abs(e.translationY) * 1.5;
       if (isHorizontal) {
         // Update translation for preview effect - limit to screen width
-        const maxTranslate = screenData.width * 0.8; // Max 80% of screen width
+        const maxTranslate = screenWidth.value * 0.8; // Max 80% of screen width
         horizontalTranslate.value = Math.max(-maxTranslate, Math.min(maxTranslate, e.translationX));
       }
     })
@@ -848,7 +848,7 @@ export default function HomeScreen() {
       const feedTypeValue = currentFeedType.value; // Get current feed type from shared value
       if (e.translationX < -threshold && feedTypeValue === 'global') {
         // Swipe left on global feed → switch to following
-        horizontalTranslate.value = withSpring(-screenData.width, {
+        horizontalTranslate.value = withSpring(-screenWidth.value, {
           damping: 15,
           stiffness: 200,
         });
@@ -860,7 +860,7 @@ export default function HomeScreen() {
         }, 300);
       } else if (e.translationX < -threshold && feedTypeValue === 'following') {
         // Swipe left on following feed → navigate to profile
-        horizontalTranslate.value = withSpring(-screenData.width, {
+        horizontalTranslate.value = withSpring(-screenWidth.value, {
           damping: 15,
           stiffness: 200,
         });
@@ -872,7 +872,7 @@ export default function HomeScreen() {
         }, 300);
       } else if (e.translationX > threshold && feedTypeValue === 'following') {
         // Swipe right on following feed → switch to global
-        horizontalTranslate.value = withSpring(screenData.width, {
+        horizontalTranslate.value = withSpring(screenWidth.value, {
           damping: 15,
           stiffness: 200,
         });
@@ -933,7 +933,7 @@ export default function HomeScreen() {
       const threshold = 50;
       if (e.translationY > threshold && hasNext) {
         // More dramatic exit animation
-        translateY.value = withSpring(screenData.height * 1.2, {
+        translateY.value = withSpring(screenHeight.value * 1.2, {
           damping: 15,
           stiffness: 100,
         });
@@ -945,7 +945,7 @@ export default function HomeScreen() {
         runOnJS(goToNext)();
       } else if (e.translationY < -threshold && hasPrevious) {
         // More dramatic exit animation
-        translateY.value = withSpring(-screenData.height * 1.2, {
+        translateY.value = withSpring(-screenHeight.value * 1.2, {
           damping: 15,
           stiffness: 100,
         });
